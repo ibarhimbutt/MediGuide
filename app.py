@@ -6,8 +6,9 @@ Routes only; prompts, services, and file utils live in dedicated modules.
 import base64
 import os
 import traceback
+from urllib.parse import quote
 
-from flask import Flask, request, jsonify, render_template, redirect, session
+from flask import Flask, request, jsonify, render_template, redirect, session, url_for
 from openai import AzureOpenAI
 
 from config import Config
@@ -55,12 +56,33 @@ def index():
     return render_template("landing.html")
 
 
+@app.route("/logout")
+def logout():
+    """Clear guest session and redirect to landing (for Easy Auth, use /.auth/logout in the browser)."""
+    session.pop("guest", None)
+    return redirect("/")
+
+
 @app.route("/chat")
 def chat_page():
     """Serve the main chat dashboard (single-page app). Redirect to landing if not authenticated."""
     if not is_authenticated():
         return redirect("/")
-    return render_template("index.html")
+    principal = request.headers.get(EASY_AUTH_HEADER)
+    is_guest = session.get("guest", False)
+    if is_guest:
+        user_display_name = "Guest"
+        logout_url = url_for("logout")
+    else:
+        user_display_name = (principal or "").strip() or "User"
+        base = request.url_root.rstrip("/")
+        logout_url = f"{base}/.auth/logout?post_logout_redirect_uri={quote(base + '/')}"
+    return render_template(
+        "index.html",
+        user_display_name=user_display_name,
+        is_guest=is_guest,
+        logout_url=logout_url,
+    )
 
 
 @app.route("/guest")

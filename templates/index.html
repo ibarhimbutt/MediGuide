@@ -111,14 +111,32 @@
                         <p class="text-[11px] uppercase tracking-[0.2em] text-gray-400">Conversation</p>
                         <p class="text-sm sm:text-base font-semibold text-gray-800">New MediGuide session</p>
                     </div>
-                    <div class="flex items-center gap-1 sm:gap-3 text-gray-400 text-sm flex-shrink-0">
+                    <div class="flex items-center gap-2 sm:gap-3 text-gray-400 text-sm flex-shrink-0">
                         <button type="button" id="chat-share-btn" aria-label="Share chat link" class="hidden sm:inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 hover:text-gray-700 transition-colors">
                             <i class="fas fa-arrow-up-from-bracket text-[13px]"></i>
                         </button>
-                        <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-[11px] font-semibold text-gray-700">
-                            G
+                        <div class="relative" id="user-menu-wrapper">
+                            <button type="button" id="user-menu-btn" aria-expanded="false" aria-haspopup="true" aria-label="User menu" class="flex items-center gap-2 rounded-xl pl-1 pr-2 py-1 hover:bg-gray-100 transition-colors text-left min-w-0">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-mg-start to-mg-end flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+                                    {{ (user_display_name|default('Guest'))[0]|upper }}
+                                </div>
+                                <div class="hidden sm:block min-w-0">
+                                    <p class="text-xs font-medium text-gray-800 truncate">{{ user_display_name|default('Guest') }}</p>
+                                    <p class="text-[10px] text-gray-500">{{ 'Guest session' if (is_guest|default(true)) else 'Signed in' }}</p>
+                                </div>
+                                <i class="fas fa-chevron-down text-[10px] text-gray-400 flex-shrink-0" aria-hidden="true"></i>
+                            </button>
+                            <div id="user-menu-dropdown" class="hidden absolute right-0 mt-1 w-48 py-1 bg-white rounded-xl shadow-lg border border-gray-100 z-50" onclick="event.stopPropagation()">
+                                <div class="px-3 py-2 border-b border-gray-100">
+                                    <p class="text-xs font-medium text-gray-800 truncate">{{ user_display_name|default('Guest') }}</p>
+                                    <p class="text-[10px] text-gray-500">{{ 'Continue as guest' if (is_guest|default(true)) else 'Signed in with Microsoft or Google' }}</p>
+                                </div>
+                                <a href="{{ logout_url|default(url_for('logout')) }}" id="user-menu-logout" class="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors">
+                                    <i class="fas fa-right-from-bracket text-gray-400"></i>
+                                    <span>Log out</span>
+                                </a>
+                            </div>
                         </div>
-                        <span class="hidden sm:inline text-xs text-gray-500">Guest</span>
                     </div>
                 </div>
             </div>

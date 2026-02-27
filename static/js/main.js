@@ -73,6 +73,21 @@
         var shareBtn = document.getElementById("chat-share-btn");
         if (shareBtn && MG.shareChatLink) shareBtn.addEventListener("click", MG.shareChatLink);
 
+        // User menu dropdown
+        var userMenuBtn = document.getElementById("user-menu-btn");
+        var userMenuDropdown = document.getElementById("user-menu-dropdown");
+        if (userMenuBtn && userMenuDropdown) {
+            userMenuBtn.addEventListener("click", function (e) {
+                e.stopPropagation();
+                var open = userMenuDropdown.classList.toggle("hidden");
+                userMenuBtn.setAttribute("aria-expanded", open ? "false" : "true");
+            });
+            document.addEventListener("click", function () {
+                userMenuDropdown.classList.add("hidden");
+                userMenuBtn.setAttribute("aria-expanded", "false");
+            });
+        }
+
         // Load recent history for sidebar
         MG.api.history().then(function (data) {
             if (MG.renderHistory) MG.renderHistory(data.items || []);
