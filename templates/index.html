@@ -12,7 +12,16 @@
                     colors: {
                         primary: { 50: '#eef7ff', 100: '#d9edff', 200: '#bce0ff', 300: '#8eccff', 400: '#58b0ff', 500: '#3190ff', 600: '#1a70f5', 700: '#135ae1', 800: '#1649b6', 900: '#163f8f', 950: '#122857' },
                         accent: { 50: '#effef5', 100: '#d9fee8', 200: '#b5fbd3', 300: '#7bf6b1', 400: '#3ae888', 500: '#11d068', 600: '#07ac53', 700: '#088744', 800: '#0c6a39', 900: '#0b5731', 950: '#003119' },
-                    }
+                        mg: { start: '#5eb5c0', end: '#50dbe6' },
+                    },
+                    keyframes: {
+                        'message-in': { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+                        'typing-bounce': { '0%, 80%, 100%': { transform: 'scale(0.6)', opacity: '0.4' }, '40%': { transform: 'scale(1)', opacity: '1' } },
+                    },
+                    animation: {
+                        'message-in': 'message-in 0.35s ease-out forwards',
+                        'typing-bounce': 'typing-bounce 1.4s ease-in-out infinite both',
+                    },
                 }
             }
         }
@@ -20,141 +29,175 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
-<body class="bg-gray-50 min-h-screen flex flex-col">
+<body class="bg-gray-50 h-screen overflow-hidden flex flex-col">
 
-    <!-- Header -->
-    <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center">
-                        <i class="fas fa-heartbeat text-white text-lg"></i>
-                    </div>
-                    <div>
-                        <h1 class="text-xl font-bold text-gray-900">MediGuide <span class="text-primary-600">AI</span></h1>
-                        <p class="text-xs text-gray-500 -mt-0.5">Health Information Assistant</p>
-                    </div>
+    <!-- Minimal top bar -->
+    <header class="bg-white border-b border-gray-100">
+        <div class="w-full px-4 h-14 flex items-center justify-between">
+            <button type="button" id="sidebar-toggle" aria-label="Toggle sidebar" class="hidden md:flex items-center justify-center w-9 h-9 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors duration-200">
+                <i class="fas fa-bars text-sm" id="sidebar-toggle-icon"></i>
+            </button>
+            <div class="flex items-center gap-3 flex-1 md:flex-initial">
+                <div class="w-12 h-12 overflow-hidden flex-shrink-0">
+                    <img src="{{ url_for('static', filename='images/robot.png') }}" alt="MediGuide AI" class="w-full h-full object-cover">
                 </div>
-                <div class="flex items-center gap-3">
-                    <div class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent-50 text-accent-700 text-xs font-medium rounded-full border border-accent-200">
-                        <span class="w-1.5 h-1.5 bg-accent-500 rounded-full animate-pulse"></span>
-                        Powered by Azure AI
-                    </div>
-                    <div class="flex items-center gap-1 text-xs text-gray-500">
-                        <i class="fas fa-language text-gray-400"></i>
-                        <span class="hidden sm:inline mr-1">Language:</span>
-                        <button type="button" class="language-pill" data-language-option="en" onclick="setLanguage('en')">EN</button>
-                        <button type="button" class="language-pill" data-language-option="ur" onclick="setLanguage('ur')">UR</button>
-                        <button type="button" class="language-pill" data-language-option="ar" onclick="setLanguage('ar')">AR</button>
-                        <button type="button" class="language-pill" data-language-option="hi" onclick="setLanguage('hi')">HI</button>
-                    </div>
+                <div>
+                    <p class="text-sm font-semibold text-gray-900">MediGuide <span class="bg-gradient-to-r from-mg-start to-mg-end bg-clip-text text-transparent">AI</span></p>
+                    <p class="text-[11px] text-gray-400 -mt-0.5">Health Information Assistant</p>
                 </div>
             </div>
         </div>
     </header>
 
-    <!-- Disclaimer Banner -->
-    <div class="bg-amber-50 border-b border-amber-200">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
-            <p class="text-xs text-amber-800 text-center">
-                <i class="fas fa-exclamation-triangle mr-1"></i>
-                <strong>Disclaimer:</strong> MediGuide AI provides general health information only and is <strong>not</strong> a substitute for professional medical advice, diagnosis, or treatment.
-            </p>
-        </div>
-    </div>
+    <div class="flex-1 min-h-0 flex flex-row w-full gap-6 px-0 py-6 overflow-hidden">
 
-    <div class="flex-1 flex flex-col lg:flex-row max-w-7xl mx-auto w-full">
+        <!-- Left sidebar: collapsible with smooth transition -->
+        <div id="sidebar-wrapper" class="hidden md:flex flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out w-64 h-full">
+        <aside class="flex flex-col w-64 min-w-64 bg-white rounded-3xl shadow-sm p-4 h-full">
+            <button type="button" onclick="typeof startNewChat === 'function' && startNewChat()"
+                class="w-full mb-4 px-4 py-2.5 rounded-2xl text-sm font-medium text-gray-800 border border-gray-200 hover:bg-gray-50 flex items-center justify-center gap-2 transition-colors duration-200 hover:border-teal-200">
+                <span class="text-base">+ New chat</span>
+            </button>
 
-        <!-- Sidebar / Feature Tabs -->
-        <nav class="lg:w-72 bg-white lg:border-r border-b lg:border-b-0 border-gray-200 p-4 lg:py-6">
-            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 px-3 hidden lg:block">Features</p>
+            <div class="flex-1 overflow-y-auto">
+                <p class="text-xs font-semibold text-gray-400 uppercase tracking-[0.18em] mb-3">Recent chats</p>
+                <div id="recent-chats" class="space-y-1 text-[13px] text-gray-500"></div>
+            </div>
 
-            <div class="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0" id="feature-tabs">
-                <button class="feature-tab active flex items-center gap-3 px-4 py-3 rounded-xl text-left whitespace-nowrap transition-all w-full"
-                        data-feature="symptom-checker" onclick="switchFeature('symptom-checker')">
-                    <div class="tab-icon w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
-                        <i class="fas fa-stethoscope text-sm"></i>
-                    </div>
-                    <div class="hidden lg:block">
-                        <p class="text-sm font-semibold">Symptom Checker</p>
-                        <p class="text-xs text-gray-500">Describe how you feel</p>
-                    </div>
-                </button>
-
-                <button class="feature-tab flex items-center gap-3 px-4 py-3 rounded-xl text-left whitespace-nowrap transition-all w-full"
-                        data-feature="report-explainer" onclick="switchFeature('report-explainer')">
-                    <div class="tab-icon w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
-                        <i class="fas fa-file-medical text-sm"></i>
-                    </div>
-                    <div class="hidden lg:block">
-                        <p class="text-sm font-semibold">Report Explainer</p>
-                        <p class="text-xs text-gray-500">Upload a medical PDF</p>
-                    </div>
-                </button>
-
-                <button class="feature-tab flex items-center gap-3 px-4 py-3 rounded-xl text-left whitespace-nowrap transition-all w-full"
-                        data-feature="medication-info" onclick="switchFeature('medication-info')">
-                    <div class="tab-icon w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
-                        <i class="fas fa-pills text-sm"></i>
-                    </div>
-                    <div class="hidden lg:block">
-                        <p class="text-sm font-semibold">Medication Safety</p>
-                        <p class="text-xs text-gray-500">Check interactions & risks</p>
-                    </div>
-                </button>
-
-                <button class="feature-tab flex items-center gap-3 px-4 py-3 rounded-xl text-left whitespace-nowrap transition-all w-full"
-                        data-feature="image-analysis" onclick="switchFeature('image-analysis')">
-                    <div class="tab-icon w-9 h-9 rounded-lg flex items-center justify-center shrink-0">
-                        <i class="fas fa-x-ray text-sm"></i>
-                    </div>
-                    <div class="hidden lg:block">
-                        <p class="text-sm font-semibold">Image Analysis</p>
-                        <p class="text-xs text-gray-500">Describe medical images</p>
-                    </div>
+            <div class="pt-4 mt-4 border-t border-gray-100 space-y-3">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-language text-[11px] text-gray-400"></i>
+                    <select id="sidebar-language" class="flex-1 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-500 focus:border-teal-500" onchange="typeof MediGuide !== 'undefined' && MediGuide.setLanguage && MediGuide.setLanguage(this.value)">
+                        <option value="en">English</option>
+                        <option value="ur">Urdu</option>
+                        <option value="ar">Arabic</option>
+                        <option value="hi">Hindi</option>
+                    </select>
+                </div>
+                <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Features</p>
+                <div class="space-y-1.5">
+                    <button type="button" onclick="switchFeature('symptom-checker');" class="w-full text-left px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 text-xs font-medium text-gray-700 flex items-center gap-2 transition-all duration-200">
+                        <i class="fas fa-stethoscope text-teal-500 text-[10px]"></i>
+                        <span>Check symptoms</span>
+                    </button>
+                    <button type="button" onclick="switchFeature('report-explainer')" class="w-full text-left px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 text-xs font-medium text-gray-700 flex items-center gap-2 transition-all duration-200">
+                        <i class="fas fa-file-medical text-teal-500 text-[10px]"></i>
+                        <span>Explain blood test</span>
+                    </button>
+                    <button type="button" onclick="switchFeature('image-analysis')" class="w-full text-left px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 text-xs font-medium text-gray-700 flex items-center gap-2 transition-all duration-200">
+                        <i class="fas fa-x-ray text-teal-500 text-[10px]"></i>
+                        <span>Analyze image</span>
+                    </button>
+                    <button type="button" onclick="switchFeature('medication-info');" class="w-full text-left px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 text-xs font-medium text-gray-700 flex items-center gap-2 transition-all duration-200">
+                        <i class="fas fa-pills text-teal-500 text-[10px]"></i>
+                        <span>Medication safety</span>
+                    </button>
+                </div>
+                <button type="button" id="help-btn" class="flex items-center gap-2 hover:text-gray-800 text-xs text-gray-500 mt-2 w-full text-left">
+                    <i class="fas fa-circle-question text-[11px]"></i>
+                    <span>Help</span>
                 </button>
             </div>
-        </nav>
+        </aside>
+        </div>
 
         <!-- Main Content Area -->
-        <main class="flex-1 flex flex-col min-h-0">
+        <main class="flex-1 flex flex-col min-h-0 min-w-0 bg-white rounded-3xl shadow-sm overflow-hidden">
 
-            <!-- Chat / Response Area -->
-            <div class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4" id="chat-area">
+            <!-- Conversation header -->
+            <div class="border-b border-gray-100">
+                <div class="flex items-center justify-between px-4 sm:px-6 pt-4 pb-2">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[11px] uppercase tracking-[0.2em] text-gray-400">Conversation</p>
+                        <p class="text-sm sm:text-base font-semibold text-gray-800">New MediGuide session</p>
+                    </div>
+                    <div class="flex items-center gap-1 sm:gap-3 text-gray-400 text-sm flex-shrink-0">
+                        <button type="button" id="chat-share-btn" aria-label="Share chat link" class="hidden sm:inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 hover:text-gray-700 transition-colors">
+                            <i class="fas fa-arrow-up-from-bracket text-[13px]"></i>
+                        </button>
+                        <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-[11px] font-semibold text-gray-700">
+                            G
+                        </div>
+                        <span class="hidden sm:inline text-xs text-gray-500">Guest</span>
+                    </div>
+                </div>
+            </div>
+            <!-- Toast for "Link copied" -->
+            <div id="share-toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2 bg-gray-800 text-white text-sm rounded-lg shadow-lg opacity-0 pointer-events-none transition-opacity duration-200 z-50" role="status" aria-live="polite">Link copied to clipboard</div>
+
+            <!-- Chat / Response Area (only scrollable region) -->
+            <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4" id="chat-area">
 
                 <!-- Welcome Message -->
-                <div id="welcome-message" class="flex flex-col items-center justify-center h-full text-center py-12">
-                    <div class="w-20 h-20 bg-primary-100 rounded-2xl flex items-center justify-center mb-6">
-                        <i class="fas fa-heartbeat text-primary-600 text-3xl"></i>
-                    </div>
-                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Welcome to MediGuide AI</h2>
-                    <p class="text-gray-500 max-w-md mb-8">Your AI-powered health information assistant. Choose a feature from the sidebar to get started.</p>
+                <div id="welcome-message" class="flex flex-col items-center justify-center h-full py-6 sm:py-10 w-full min-w-0">
+                    <!-- Stack (robot on top, content below) until lg; side-by-side only when there's enough width -->
+                    <div class="w-full max-w-5xl min-w-0 bg-white rounded-3xl shadow-lg px-4 py-6 sm:px-10 sm:py-10 flex flex-col lg:flex-row gap-6 lg:gap-8 items-center">
+                        <div class="w-full max-w-[260px] sm:max-w-[300px] lg:w-[340px] lg:max-w-none min-h-[240px] sm:min-h-[300px] lg:min-h-0 lg:h-[500px] rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0 self-center py-4 px-3 sm:py-5 sm:px-4 box-border">
+                            <img src="{{ url_for('static', filename='images/robot.png') }}"
+                                 alt="MediGuide assistant"
+                                 class="max-w-full max-h-full w-auto h-auto object-contain object-center">
+                        </div>
+                        <div class="flex-1 text-left min-w-0 w-full lg:min-w-[320px]">
+                            <p class="text-xs uppercase tracking-[0.22em] text-gray-400 mb-2">Let&apos;s get started</p>
+                            <h2 class="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-3">
+                                Your health, guided by
+                                <span class="bg-gradient-to-r from-mg-start to-mg-end bg-clip-text text-transparent">MediGuide AI</span>
+                            </h2>
+                            <p class="text-gray-500 text-sm sm:text-base max-w-xl">
+                                I&apos;m an AI-powered health assistant that can explain your symptoms, medical reports,
+                                medications, and X‑rays in clear, simple language — always with a reminder to see a real doctor.
+                            </p>
+                            <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+                                <!-- Check my symptoms (highlighted) -->
+                                <button onclick="switchFeature('symptom-checker');"
+                                        class="text-left px-4 py-3 rounded-2xl bg-gradient-to-r from-mg-start to-mg-end text-white border-0 hover:brightness-95 transition-all duration-200 group shadow-sm min-w-0">
+                                    <div class="flex items-center justify-between gap-2 min-w-0">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-semibold text-white break-words">Check my symptoms</p>
+                                            <p class="text-xs text-teal-50 mt-1 break-words">Get possible causes &amp; urgency level.</p>
+                                        </div>
+                                        <i class="fas fa-arrow-right text-white text-xs flex-shrink-0"></i>
+                                    </div>
+                                </button>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg w-full">
-                        <button onclick="switchFeature('symptom-checker'); insertExample('I have a persistent headache, mild fever, and feel very tired for the past 3 days.')"
-                                class="text-left p-4 rounded-xl border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all group">
-                            <p class="text-sm font-medium text-gray-700 group-hover:text-primary-700">
-                                <i class="fas fa-comment-medical mr-2 text-primary-500"></i>"I have a headache and fever..."
-                            </p>
-                        </button>
-                        <button onclick="switchFeature('medication-info'); insertExample('Amoxicillin')"
-                                class="text-left p-4 rounded-xl border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all group">
-                            <p class="text-sm font-medium text-gray-700 group-hover:text-primary-700">
-                                <i class="fas fa-capsules mr-2 text-primary-500"></i>"Tell me about Amoxicillin"
-                            </p>
-                        </button>
-                        <button onclick="switchFeature('report-explainer')"
-                                class="text-left p-4 rounded-xl border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all group">
-                            <p class="text-sm font-medium text-gray-700 group-hover:text-primary-700">
-                                <i class="fas fa-file-upload mr-2 text-primary-500"></i>Upload a blood test PDF
-                            </p>
-                        </button>
-                        <button onclick="switchFeature('image-analysis')"
-                                class="text-left p-4 rounded-xl border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-all group">
-                            <p class="text-sm font-medium text-gray-700 group-hover:text-primary-700">
-                                <i class="fas fa-x-ray mr-2 text-primary-500"></i>Analyze a medical image
-                            </p>
-                        </button>
+                                <!-- Explain my blood test -->
+                                <button onclick="switchFeature('report-explainer')"
+                                        class="text-left px-4 py-3 rounded-2xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 hover:shadow-md transition-all duration-200 group min-w-0">
+                                    <div class="flex items-center justify-between gap-2 min-w-0">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium text-gray-700 group-hover:text-gray-900 break-words">Explain my blood test</p>
+                                            <p class="text-xs text-gray-400 mt-1 break-words">Upload a PDF and see results in plain language.</p>
+                                        </div>
+                                        <i class="fas fa-arrow-right text-gray-400 text-xs group-hover:text-gray-600 flex-shrink-0"></i>
+                                    </div>
+                                </button>
+
+                                <!-- Analyze a medical image -->
+                                <button onclick="switchFeature('image-analysis')"
+                                        class="text-left px-4 py-3 rounded-2xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 hover:shadow-md transition-all duration-200 group min-w-0">
+                                    <div class="flex items-center justify-between gap-2 min-w-0">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium text-gray-700 group-hover:text-gray-900 break-words">Analyze a medical image</p>
+                                            <p class="text-xs text-gray-400 mt-1 break-words">Upload an X‑ray or scan for a description.</p>
+                                        </div>
+                                        <i class="fas fa-arrow-right text-gray-400 text-xs group-hover:text-gray-600 flex-shrink-0"></i>
+                                    </div>
+                                </button>
+
+                                <!-- Check medication safety -->
+                                <button onclick="switchFeature('medication-info'); insertExample('Paracetamol, Ibuprofen')"
+                                        class="text-left px-4 py-3 rounded-2xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 hover:shadow-md transition-all duration-200 group min-w-0">
+                                    <div class="flex items-center justify-between gap-2 min-w-0">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium text-gray-700 group-hover:text-gray-900 break-words">Check medication safety</p>
+                                            <p class="text-xs text-gray-400 mt-1 break-words">See uses, side effects, and interactions.</p>
+                                        </div>
+                                        <i class="fas fa-arrow-right text-gray-400 text-xs group-hover:text-gray-600 flex-shrink-0"></i>
+                                    </div>
+                                </button>
+
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -162,16 +205,16 @@
             </div>
 
             <!-- Input Area -->
-            <div class="border-t border-gray-200 bg-white p-4 sm:p-6">
+            <div class="border-t border-gray-100 bg-gray-50 px-4 sm:px-6 py-4 min-w-0">
 
                 <!-- Symptom Checker Input -->
-                <div id="input-symptom-checker" class="input-panel">
-                    <form id="symptom-form" class="flex gap-3" onsubmit="handleSymptomSubmit(event)">
+                <div id="input-symptom-checker" class="input-panel min-w-0">
+                    <form id="symptom-form" class="flex gap-2 sm:gap-3 min-w-0" onsubmit="handleSymptomSubmit(event)">
                         <input type="text" id="symptom-input"
-                               class="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                               placeholder="Describe your symptoms... e.g., headache, fever, and sore throat">
+                               class="flex-1 min-w-0 px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                               placeholder="Describe your symptoms... e.g., headache, fever, sore throat">
                         <button type="submit" id="symptom-btn"
-                                class="px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                                class="flex-shrink-0 px-4 sm:px-6 py-3 bg-gradient-to-r from-mg-start to-mg-end text-white rounded-xl transition-all duration-200 font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:brightness-95">
                             <span>Send</span>
                             <i class="fas fa-paper-plane text-xs"></i>
                         </button>
@@ -179,9 +222,9 @@
                 </div>
 
                 <!-- Report Explainer Input -->
-                <div id="input-report-explainer" class="input-panel hidden">
+                <div id="input-report-explainer" class="input-panel hidden min-w-0">
                     <form id="report-form" onsubmit="handleReportSubmit(event)">
-                        <div class="upload-zone rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-400 transition-colors p-6 text-center cursor-pointer"
+                        <div class="upload-zone rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-200 p-6 text-center cursor-pointer"
                              id="pdf-drop-zone" onclick="document.getElementById('pdf-input').click()">
                             <input type="file" id="pdf-input" accept=".pdf" class="hidden" onchange="handleFileSelect(this, 'pdf')">
                             <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
@@ -189,7 +232,7 @@
                             <p class="text-xs text-gray-400 mt-1">PDF files up to 10MB</p>
                         </div>
                         <button type="submit" id="report-btn"
-                                class="mt-3 w-full px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="mt-3 w-full px-6 py-3 bg-gradient-to-r from-mg-start to-mg-end text-white rounded-xl transition-all duration-200 font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:brightness-95"
                                 disabled>
                             <i class="fas fa-search-plus"></i>
                             <span>Analyze Report</span>
@@ -198,13 +241,13 @@
                 </div>
 
                 <!-- Medication Info Input -->
-                <div id="input-medication-info" class="input-panel hidden">
-                    <form id="medication-form" class="flex gap-3" onsubmit="handleMedicationSubmit(event)">
+                <div id="input-medication-info" class="input-panel hidden min-w-0">
+                    <form id="medication-form" class="flex gap-2 sm:gap-3 min-w-0" onsubmit="handleMedicationSubmit(event)">
                         <input type="text" id="medication-input"
-                               class="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                               placeholder="Enter a medication name... e.g., Ibuprofen, Metformin, Amoxicillin">
+                               class="flex-1 min-w-0 px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                               placeholder="Enter medication... e.g., Ibuprofen, Metformin">
                         <button type="submit" id="medication-btn"
-                                class="px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                                class="px-6 py-3 bg-gradient-to-r from-mg-start to-mg-end text-white rounded-xl transition-all duration-200 font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:brightness-95">
                             <span>Search</span>
                             <i class="fas fa-search text-xs"></i>
                         </button>
@@ -212,9 +255,9 @@
                 </div>
 
                 <!-- Image Analysis Input -->
-                <div id="input-image-analysis" class="input-panel hidden">
+                <div id="input-image-analysis" class="input-panel hidden min-w-0">
                     <form id="image-form" onsubmit="handleImageSubmit(event)">
-                        <div class="upload-zone rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-400 transition-colors p-6 text-center cursor-pointer"
+                        <div class="upload-zone rounded-xl border-2 border-dashed border-gray-300 hover:border-primary-400 hover:bg-primary-50/50 transition-all duration-200 p-6 text-center cursor-pointer"
                              id="image-drop-zone" onclick="document.getElementById('image-input').click()">
                             <input type="file" id="image-input" accept="image/*" class="hidden" onchange="handleFileSelect(this, 'image')">
                             <i class="fas fa-image text-3xl text-gray-400 mb-2"></i>
@@ -225,7 +268,7 @@
                             <img id="image-preview" class="max-h-40 rounded-lg mx-auto border border-gray-200" alt="Preview">
                         </div>
                         <button type="submit" id="image-btn"
-                                class="mt-3 w-full px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                class="mt-3 w-full px-6 py-3 bg-gradient-to-r from-mg-start to-mg-end text-white rounded-xl transition-all duration-200 font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:brightness-95"
                                 disabled>
                             <i class="fas fa-eye"></i>
                             <span>Analyze Image</span>
@@ -237,6 +280,56 @@
         </main>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <!-- Help modal -->
+    <div id="help-modal" class="fixed inset-0 z-50 hidden" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+        <div id="help-modal-backdrop" class="absolute inset-0 bg-black/60 transition-opacity"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4 overflow-y-auto">
+            <div class="relative bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                <div class="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                    <h2 id="help-modal-title" class="text-lg font-semibold text-gray-900">How to use MediGuide AI</h2>
+                    <button type="button" id="help-modal-close" aria-label="Close" class="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+                <div class="px-6 py-5 space-y-4 text-sm text-gray-600">
+                    <p>MediGuide AI helps you understand health information in simple language. Here’s how to use each feature:</p>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 mb-1 flex items-center gap-2"><i class="fas fa-stethoscope text-teal-500"></i> Check symptoms</h3>
+                        <p>Describe how you feel (e.g. headache, fever, tiredness). You’ll get possible causes and when to see a doctor. You can send follow-up messages in the same chat.</p>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 mb-1 flex items-center gap-2"><i class="fas fa-file-medical text-teal-500"></i> Explain blood test</h3>
+                        <p>Upload a PDF of your lab report. The AI will explain results in plain language and point out values that may need attention. Always discuss results with your doctor.</p>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 mb-1 flex items-center gap-2"><i class="fas fa-x-ray text-teal-500"></i> Analyze image</h3>
+                        <p>Upload an X-ray or other medical image. You’ll get a simple description of what’s visible. This is not a diagnosis—a radiologist or doctor should review the image.</p>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-900 mb-1 flex items-center gap-2"><i class="fas fa-pills text-teal-500"></i> Medication safety</h3>
+                        <p>Enter one or more medication names to see what they’re for, common side effects, and possible interactions. Use this only as a guide; your pharmacist or doctor has the final say.</p>
+                    </div>
+                    <p class="text-gray-500 text-xs border-t border-gray-100 pt-4 mt-4">MediGuide AI is for general information only. It does not replace professional medical advice, diagnosis, or treatment. Always consult a qualified healthcare provider.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/config.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/state.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/render.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/persistence.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/handlers.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+    <footer class="w-full border-t border-gray-100 mt-4">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-0 py-3">
+            <p class="text-[11px] text-gray-400">
+                MediGuide AI provides general health information only and is not a substitute for professional medical advice,
+                diagnosis, or treatment. Always consult a qualified healthcare provider about your own health.
+            </p>
+        </div>
+    </footer>
 </body>
 </html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediGuide AI — Sign in</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        mg: { start: '#5eb5c0', end: '#50dbe6' },
+                    },
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="min-h-screen bg-gradient-to-b from-sky-50 via-teal-50/30 to-white flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+        <div class="bg-white rounded-3xl shadow-xl shadow-gray-200/60 border border-gray-100 overflow-hidden">
+            <!-- Logo & mascot -->
+            <div class="pt-10 pb-4 px-6 flex flex-col items-center">
+                <div class="w-20 h-20 rounded-2xl overflow-hidden flex-shrink-0 mb-4">
+                    <img src="{{ url_for('static', filename='images/robot.png') }}" alt="MediGuide AI" class="w-full h-full object-contain">
+                </div>
+                <h1 class="text-xl font-bold text-gray-900">
+                    MediGuide <span class="bg-gradient-to-r from-mg-start to-mg-end bg-clip-text text-transparent">AI</span>
+                </h1>
+            </div>
+
+            <div class="px-6 pb-8">
+                <h2 class="text-lg font-semibold text-gray-800 text-center mb-1">Welcome to MediGuide AI</h2>
+                <p class="text-sm text-gray-500 text-center mb-6">Your AI-powered health assistant — sign in to get started.</p>
+
+                <div class="space-y-3">
+                    <a href="/.auth/login/aad?post_login_redirect_uri=/chat"
+                       class="flex items-center justify-center gap-3 w-full py-3 px-4 rounded-xl text-white font-medium text-sm transition-all duration-200 hover:brightness-110 shadow-sm"
+                       style="background-color: #00A4EF;">
+                        <i class="fab fa-microsoft text-lg" aria-hidden="true"></i>
+                        Sign in with Microsoft
+                    </a>
+                    <a href="/.auth/login/google?post_login_redirect_uri=/chat"
+                       class="flex items-center justify-center gap-3 w-full py-3 px-4 rounded-xl text-white font-medium text-sm transition-all duration-200 hover:brightness-110 shadow-sm"
+                       style="background-color: #4285F4;">
+                        <i class="fab fa-google text-lg" aria-hidden="true"></i>
+                        Sign in with Google
+                    </a>
+                </div>
+
+                <p class="text-xs text-gray-400 text-center mt-4 leading-relaxed">
+                    We never store your password. You sign in securely through your existing Microsoft or Google account.
+                </p>
+
+                <div class="mt-6 pt-4 border-t border-gray-100 text-center">
+                    <a href="/guest" class="text-xs text-teal-600 hover:text-teal-700 hover:underline">Continue as Guest</a>
+                    <p class="text-[10px] text-gray-400 mt-1">For local testing without Azure authentication</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

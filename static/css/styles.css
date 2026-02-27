@@ -1,57 +1,9 @@
-/* ---------------------------------------------------------------------------
-   MediGuide AI — Custom Styles
-   --------------------------------------------------------------------------- */
+/* MediGuide AI — Minimal CSS: animations + scrollbar (Tailwind CDN for layout) */
 
-/* Language selector */
-.language-pill {
-    @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border border-gray-200 text-gray-500 bg-white cursor-pointer transition-colors;
-}
-
-.language-pill:hover {
-    border-color: #58b0ff;
-    color: #135ae1;
-}
-
-.language-pill.language-active {
-    border-color: #1a70f5;
-    color: #1a70f5;
-    background-color: #eef7ff;
-}
-
-/* Feature tab styles */
-.feature-tab {
-    background: transparent;
-    color: #374151;
-    border: 1px solid transparent;
-}
-
-.feature-tab:hover {
-    background: #f9fafb;
-    border-color: #e5e7eb;
-}
-
-.feature-tab.active {
-    background: #eef7ff;
-    border-color: #bce0ff;
-    color: #135ae1;
-}
-
-.feature-tab .tab-icon {
-    background: #f3f4f6;
-    color: #6b7280;
-}
-
-.feature-tab.active .tab-icon {
-    background: #1a70f5;
-    color: white;
-}
-
-.feature-tab:hover .tab-icon {
-    background: #e5e7eb;
-}
-
-.feature-tab.active:hover .tab-icon {
-    background: #135ae1;
+/* Collapsible sidebar: smooth width transition */
+#sidebar-wrapper.sidebar-collapsed {
+    width: 0;
+    min-width: 0;
 }
 
 /* Chat area scrollbar */
@@ -59,60 +11,24 @@
     scrollbar-width: thin;
     scrollbar-color: #d1d5db transparent;
 }
-
 #chat-area::-webkit-scrollbar {
     width: 6px;
 }
-
 #chat-area::-webkit-scrollbar-track {
     background: transparent;
 }
-
 #chat-area::-webkit-scrollbar-thumb {
     background: #d1d5db;
     border-radius: 3px;
 }
-
 #chat-area::-webkit-scrollbar-thumb:hover {
     background: #9ca3af;
 }
 
-/* AI response content styling */
-.ai-response h3 {
-    font-size: 1rem;
-    font-weight: 700;
-    color: #111827;
-    margin-top: 1rem;
-    margin-bottom: 0.25rem;
-}
-
-.ai-response h4 {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #111827;
-    margin-top: 0.75rem;
-    margin-bottom: 0.25rem;
-}
-
-.ai-response ul {
-    margin: 0.5rem 0;
-    padding-left: 0.25rem;
-}
-
-.ai-response li {
-    margin-bottom: 0.25rem;
-    line-height: 1.5;
-}
-
-.ai-response strong {
-    color: #111827;
-}
-
-/* Message entrance animation */
+/* Message fade-in (used by render.js) */
 .message-enter {
-    animation: messageSlideIn 0.3s ease-out;
+    animation: messageSlideIn 0.35s ease-out forwards;
 }
-
 @keyframes messageSlideIn {
     from {
         opacity: 0;
@@ -124,23 +40,13 @@
     }
 }
 
-/* Loading dots animation */
+/* Typing indicator dots */
 .loading-dots span {
     animation: loadingBounce 1.4s ease-in-out infinite both;
 }
-
-.loading-dots span:nth-child(1) {
-    animation-delay: 0s;
-}
-
-.loading-dots span:nth-child(2) {
-    animation-delay: 0.16s;
-}
-
-.loading-dots span:nth-child(3) {
-    animation-delay: 0.32s;
-}
-
+.loading-dots span:nth-child(1) { animation-delay: 0s; }
+.loading-dots span:nth-child(2) { animation-delay: 0.16s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.32s; }
 @keyframes loadingBounce {
     0%, 80%, 100% {
         transform: scale(0.6);
@@ -152,14 +58,31 @@
     }
 }
 
-/* Upload zone hover effect */
-.upload-zone {
-    transition: all 0.2s ease;
+/* AI response content (prose in markdown output) */
+.ai-response h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #111827;
+    margin-top: 1rem;
+    margin-bottom: 0.25rem;
 }
-
-.upload-zone:hover {
-    border-color: #58b0ff;
-    background-color: #f0f7ff;
+.ai-response h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #111827;
+    margin-top: 0.75rem;
+    margin-bottom: 0.25rem;
+}
+.ai-response ul {
+    margin: 0.5rem 0;
+    padding-left: 0.25rem;
+}
+.ai-response li {
+    margin-bottom: 0.25rem;
+    line-height: 1.5;
+}
+.ai-response strong {
+    color: #111827;
 }
 
 /* Focus visible for accessibility */
@@ -167,28 +90,4 @@ button:focus-visible,
 input:focus-visible {
     outline: 2px solid #3190ff;
     outline-offset: 2px;
-}
-
-/* Mobile responsive adjustments */
-@media (max-width: 1024px) {
-    #feature-tabs {
-        flex-direction: row !important;
-    }
-
-    .feature-tab {
-        min-width: auto;
-        justify-content: center;
-        padding: 0.625rem 0.875rem;
-    }
-}
-
-@media (max-width: 640px) {
-    .feature-tab .tab-icon {
-        width: 2rem;
-        height: 2rem;
-    }
-
-    .feature-tab .tab-icon i {
-        font-size: 0.75rem;
-    }
 }
