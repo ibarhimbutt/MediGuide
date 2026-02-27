@@ -76,7 +76,8 @@ def chat_page():
     else:
         user_display_name = (principal or "").strip() or "User"
         base = request.url_root.rstrip("/")
-        logout_url = f"{base}/.auth/logout?post_logout_redirect_uri={quote(base + '/')}"
+        # Use relative path so Azure may redirect straight to app and skip the "You have been signed out" page
+        logout_url = f"{base}/.auth/logout?post_logout_redirect_uri={quote('/')}"
     return render_template(
         "index.html",
         user_display_name=user_display_name,
