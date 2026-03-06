@@ -137,10 +137,16 @@ LITERACY_MEDICAL_BASE = (
     "- Do NOT use lay language when a precise medical term exists (e.g. use 'myocardial infarction' not 'heart attack' in medical mode).\n"
     "- Always end with: 'This information is for clinical reference only and does not replace clinical judgment.'"
 )
+# Added whenever user_location is provided (any mode) — prevents "I don't have access" responses
+LOCATION_PROVIDED = (
+    "\n\nUSER LOCATION PROVIDED: The user is located in: {user_location}. "
+    "You HAVE access to this. Do NOT say you lack location-specific information, doctor directories, or local data. "
+    "Use the user's location when recommending care. For US users, we fetch real providers from the NPPES registry."
+)
+
 LITERACY_MEDICAL_LOCATION = (
     "\n\nLOCATION-BASED RECOMMENDATION (user's area): "
-    "The user is located in: {user_location}. "
-    "When recommending specialist or follow-up care, we will show them real US providers from the NPPES registry. "
+    "The user is located in: {user_location}. We will show them real US providers from the NPPES registry. "
     "Use standard NPPES taxonomy names: Cardiology, Internal Medicine, Family Medicine, Pediatrics, Neurology, "
     "Orthopaedic Surgery, General Practice, Emergency Medicine, Obstetrics & Gynecology, Dermatology, Psychiatry, "
     "Gastroenterology, Pulmonology, Endocrinology, Nephrology, Rheumatology, Urology. "
@@ -178,4 +184,6 @@ def get_system_prompt(
             literacy_add += LITERACY_MEDICAL_LOCATION.format(user_location=user_location.strip())
     else:
         literacy_add = LITERACY_STANDARD
+    if user_location and user_location.strip():
+        literacy_add += LOCATION_PROVIDED.format(user_location=user_location.strip())
     return f"{base}\n\n{literacy_add}\n\n{lang_instruction}"

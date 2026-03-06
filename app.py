@@ -272,6 +272,26 @@ def chat():
         user_state = (data.get("state") or data.get("region") or "").strip() or None
         user_country = (data.get("country") or "").strip() or None
 
+        if not user_location or not user_city or not user_state:
+            try:
+                import httpx
+                client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").strip().split(",")[0].strip() or None
+                url = "http://ip-api.com/json/" if (not client_ip or client_ip == "127.0.0.1") else f"http://ip-api.com/json/{client_ip}"
+                with httpx.Client(timeout=2.0) as http:
+                    r = http.get(url, params={"fields": "city,regionName,country"})
+                if r.status_code == 200:
+                    loc_data = r.json()
+                    c = (loc_data.get("city") or "").strip()
+                    s = (loc_data.get("regionName") or "").strip()
+                    co = (loc_data.get("country") or "").strip()
+                    if c or s or co:
+                        user_city = user_city or c
+                        user_state = user_state or s
+                        user_country = user_country or co
+                        user_location = user_location or ", ".join(filter(None, [c, s, co]))
+            except Exception:
+                pass
+
         system_prompt = get_system_prompt("symptom-checker", language, literacy_mode, user_location)
         messages = [{"role": "system", "content": system_prompt}]
         for item in history:
