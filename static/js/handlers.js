@@ -12,11 +12,29 @@
         document.querySelectorAll(".feature-tab").forEach(function (tab) {
             tab.classList.toggle("active", tab.dataset.feature === feature);
         });
-        document.querySelectorAll(".input-panel").forEach(function (panel) {
-            panel.classList.add("hidden");
-        });
-        var panel = document.getElementById("input-" + feature);
-        if (panel) panel.classList.remove("hidden");
+        var timelineView = document.getElementById("timeline-view");
+        var chatArea = document.getElementById("chat-area");
+        var chatInputArea = document.getElementById("chat-input-area");
+        if (feature === "health-timeline") {
+            if (timelineView) timelineView.classList.remove("hidden");
+            if (timelineView) timelineView.classList.add("flex");
+            if (chatArea) chatArea.classList.add("hidden");
+            if (chatInputArea) chatInputArea.classList.add("hidden");
+            var literacyWrap = document.getElementById("literacy-toggle-wrapper");
+            if (literacyWrap) literacyWrap.classList.add("hidden");
+            if (MG.loadTimeline) MG.loadTimeline();
+        } else {
+            if (timelineView) { timelineView.classList.add("hidden"); timelineView.classList.remove("flex"); }
+            if (chatArea) chatArea.classList.remove("hidden");
+            if (chatInputArea) chatInputArea.classList.remove("hidden");
+            var literacyWrap = document.getElementById("literacy-toggle-wrapper");
+            if (literacyWrap) literacyWrap.classList.remove("hidden");
+            document.querySelectorAll(".input-panel").forEach(function (panel) {
+                panel.classList.add("hidden");
+            });
+            var panel = document.getElementById("input-" + feature);
+            if (panel) panel.classList.remove("hidden");
+        }
         var welcome = document.getElementById("welcome-message");
         if (welcome) welcome.style.display = "none";
         if (feature !== "symptom-checker") state.symptomHistory = [];
@@ -54,6 +72,107 @@
         var sel = document.getElementById("sidebar-language");
         if (sel) sel.value = lang;
         if (MG.persistSession) MG.persistSession();
+    };
+
+    MG.loadTimeline = function () {
+        if (!state.userId) return;
+        var rangeSel = document.getElementById("timeline-range");
+        var range = rangeSel ? rangeSel.value : "30";
+        var summaryEl = document.getElementById("timeline-summary-text");
+        var entriesEl = document.getElementById("timeline-entries");
+        if (summaryEl) summaryEl.textContent = "Loading...";
+        if (entriesEl) entriesEl.innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">Loading timeline...</div>';
+        MG.api.timeline(range).then(function (data) {
+            MG.state.timelineData = data;
+            if (summaryEl) summaryEl.textContent = data.summary || "No summary available.";
+            if (entriesEl) MG.renderTimelineEntries(data.items || []);
+
+            var rangeLabels = { "7": "Last 7 days", "30": "Last 30 days", "90": "Last 3 months", "all": "All time" };
+            MG.state.timelineDateRange = rangeLabels[range] || range;
+        }).catch(function () {
+            if (summaryEl) summaryEl.textContent = "Failed to load timeline.";
+            if (entriesEl) entriesEl.innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">Failed to load. Please try again.</div>';
+        });
+    };
+
+    MG.renderTimelineEntries = function (items) {
+        var container = document.getElementById("timeline-entries");
+        if (!container) return;
+        container.innerHTML = "";
+        if (!items || items.length === 0) {
+            container.innerHTML = '<div class="text-center py-8 text-gray-400 text-sm">No health interactions in this period.</div>';
+            return;
+        }
+        var icons = { "symptom-checker": "fa-stethoscope", "medication-safety": "fa-pills", "report-explainer": "fa-file-medical", "image-analysis": "fa-x-ray" };
+        var urgencyColors = { "HIGH": "bg-red-100 text-red-700", "MEDIUM": "bg-amber-100 text-amber-700", "LOW": "bg-emerald-100 text-emerald-700" };
+        var urgencyLabels = { "HIGH": "High", "MEDIUM": "Medium", "LOW": "Low" };
+        items.forEach(function (item, idx) {
+            var dt = item.date ? new Date(item.date).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "";
+            var icon = icons[item.feature] || "fa-circle";
+            var urgencyClass = urgencyColors[item.urgency] || urgencyColors.LOW;
+            var urgencyLabel = urgencyLabels[item.urgency] || "Low";
+            var lineColor = item.urgency === "HIGH" ? "red" : item.urgency === "MEDIUM" ? "amber" : "emerald";
+            var entry = document.createElement("div");
+            entry.className = "timeline-entry flex gap-4 py-3 border-b border-gray-100 last:border-0";
+            entry.dataset.id = item.id || idx;
+            var dotHtml = '<div class="timeline-dot w-3 h-3 rounded-full flex-shrink-0 mt-1.5 bg-' + lineColor + '-500"></div>';
+            var contentHtml = '<div class="flex-1 min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="text-xs text-gray-500">' + (dt || "") + '</span>' +
+                '<span class="inline-flex items-center gap-1 text-xs"><i class="fas ' + icon + ' text-teal-500"></i>' + (item.featureLabel || item.feature) + '</span>' +
+                '<span class="inline-flex px-2 py-0.5 rounded text-[10px] font-medium ' + urgencyClass + '">' + urgencyLabel + '</span></div>' +
+                '<p class="text-sm text-gray-700 mt-1">' + (item.summary || "").replace(/</g, "&lt;") + '</p>' +
+                (item.detail ? '<div class="timeline-detail hidden mt-2 p-3 bg-gray-50 rounded-lg text-xs text-gray-600">' + (item.detail || "").replace(/</g, "&lt;").replace(/\n/g, "<br>") + '</div>' : "") +
+                (item.detail ? '<button type="button" class="timeline-expand mt-1 text-xs text-teal-600 hover:text-teal-700">Show details</button>' : "") +
+                (item.detail ? '<button type="button" class="timeline-collapse hidden mt-1 text-xs text-teal-600 hover:text-teal-700">Hide details</button>' : "") +
+                '</div>';
+            entry.innerHTML = '<div class="flex-shrink-0 w-4 flex flex-col items-center"><div class="w-1 flex-1 bg-gray-200 min-h-[8px]"></div>' + dotHtml + '<div class="w-1 flex-1 bg-gray-200 min-h-[8px]"></div></div>' + contentHtml;
+            container.appendChild(entry);
+            if (item.detail) {
+                var expandBtn = entry.querySelector(".timeline-expand");
+                var collapseBtn = entry.querySelector(".timeline-collapse");
+                var detailDiv = entry.querySelector(".timeline-detail");
+                if (expandBtn && collapseBtn && detailDiv) {
+                    expandBtn.addEventListener("click", function () {
+                        detailDiv.classList.remove("hidden");
+                        expandBtn.classList.add("hidden");
+                        collapseBtn.classList.remove("hidden");
+                    });
+                    collapseBtn.addEventListener("click", function () {
+                        detailDiv.classList.add("hidden");
+                        expandBtn.classList.remove("hidden");
+                        collapseBtn.classList.add("hidden");
+                    });
+                }
+            }
+        });
+    };
+
+    MG.downloadHealthReport = function () {
+        var data = MG.state.timelineData;
+        if (!data || !MG.api || !MG.api.downloadHealthReport) return;
+        var rangeSel = document.getElementById("timeline-range");
+        var rangeLabels = { "7": "Last 7 days", "30": "Last 30 days", "90": "Last 3 months", "all": "All time" };
+        var range = rangeSel ? rangeSel.value : "30";
+        var dateRange = rangeLabels[range] || range;
+        var payload = {
+            userId: state.userId,
+            patientName: state.userDisplayName || "Patient",
+            dateRange: dateRange,
+            summary: data.summary || "",
+            entries: data.items || [],
+        };
+        var btn = document.getElementById("timeline-download-btn");
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...'; }
+        MG.api.downloadHealthReport(payload).then(function (blob) {
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "MediGuide_Health_Report.pdf";
+            a.click();
+            URL.revokeObjectURL(a.href);
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-download text-[10px]"></i> Download Health Report'; }
+        }).catch(function (err) {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-download text-[10px]"></i> Download Health Report'; }
+            alert("Failed to generate PDF: " + (err && err.message ? err.message : "Unknown error"));
+        });
     };
 
     MG.insertExample = function (text) {
@@ -361,6 +480,34 @@
             fallbackCopy(url, toast);
         }
     };
+
+    document.addEventListener("click", function (e) {
+        var btn = e.target && e.target.closest && e.target.closest(".er-pdf-download-btn");
+        if (!btn || !MG.api || !MG.api.generateErPdf) return;
+        var paramsEnc = btn.getAttribute("data-params");
+        if (!paramsEnc) return;
+        var params;
+        try {
+            params = JSON.parse(decodeURIComponent(paramsEnc));
+        } catch (err) {
+            return;
+        }
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+        MG.api.generateErPdf(params).then(function (blob) {
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "MediGuide_ER_Prep_Sheet.pdf";
+            a.click();
+            URL.revokeObjectURL(a.href);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-download"></i> Download ER Prep Sheet';
+        }).catch(function (err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-download"></i> Download ER Prep Sheet';
+            alert("Failed to generate PDF: " + (err && err.message ? err.message : "Unknown error"));
+        });
+    });
 
     function fallbackCopy(url, toast) {
         try {

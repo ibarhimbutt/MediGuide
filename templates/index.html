@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
-<body class="bg-gray-50 h-screen overflow-hidden flex flex-col">
+<body class="bg-gray-50 h-screen overflow-hidden flex flex-col" data-user-name="{{ user_display_name|default('Guest') }}">
 
     <!-- Minimal top bar -->
     <header class="bg-white border-b border-gray-100">
@@ -48,6 +48,10 @@
                     <p class="text-sm font-semibold text-gray-900">MediGuide <span class="bg-gradient-to-r from-mg-start to-mg-end bg-clip-text text-transparent">AI</span></p>
                     <p class="text-[11px] text-gray-400 -mt-0.5">Health Information Assistant</p>
                 </div>
+            </div>
+            <div id="user-location-display" class="hidden items-center gap-1.5 text-[10px] text-gray-500 flex-shrink-0 max-w-[160px] truncate sm:max-w-[200px]" title="Your location — used for area-based doctor recommendations">
+                <i class="fas fa-location-dot text-teal-500"></i>
+                <span id="user-location-text"></span>
             </div>
         </div>
     </header>
@@ -95,10 +99,18 @@
                         <i class="fas fa-pills text-teal-500 text-[10px]"></i>
                         <span>Medication safety</span>
                     </button>
+                    <button type="button" onclick="switchFeature('health-timeline');" class="w-full text-left px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 text-xs font-medium text-gray-700 flex items-center gap-2 transition-all duration-200">
+                        <i class="fas fa-clock-rotate-left text-teal-500 text-[10px]"></i>
+                        <span>Health Timeline</span>
+                    </button>
                 </div>
                 <button type="button" id="help-btn" class="flex items-center gap-2 hover:text-gray-800 text-xs text-gray-500 mt-2 w-full text-left">
                     <i class="fas fa-circle-question text-[11px]"></i>
                     <span>Help</span>
+                </button>
+                <button type="button" id="find-doctors-btn" class="flex items-center gap-2 hover:text-teal-700 text-xs text-teal-600 mt-2 w-full text-left">
+                    <i class="fas fa-user-doctor text-[11px]"></i>
+                    <span>Find doctors near me</span>
                 </button>
             </div>
         </aside>
@@ -113,6 +125,14 @@
                     <div class="min-w-0 flex-1">
                         <p class="text-[11px] uppercase tracking-[0.2em] text-gray-400">Conversation</p>
                         <p class="text-sm sm:text-base font-semibold text-gray-800">New MediGuide session</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0" id="literacy-toggle-wrapper">
+                        <span class="text-[10px] text-gray-400 hidden sm:inline">Explain:</span>
+                        <div class="flex rounded-lg border border-gray-200 overflow-hidden" role="group" aria-label="Health literacy mode">
+                            <button type="button" id="literacy-simple" class="literacy-btn px-2 py-1 text-[10px] font-medium bg-blue-50 text-blue-600 border-r border-gray-200 hover:bg-blue-100" data-mode="simple" title="Simple language">Simple</button>
+                            <button type="button" id="literacy-standard" class="literacy-btn px-2 py-1 text-[10px] font-medium bg-gray-200 text-gray-800 border-r border-gray-200 ring-1 ring-teal-500" data-mode="standard" title="Standard">Standard</button>
+                            <button type="button" id="literacy-medical" class="literacy-btn px-2 py-1 text-[10px] font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100" data-mode="medical" title="Medical terminology">Medical</button>
+                        </div>
                     </div>
                     <div class="flex items-center gap-2 sm:gap-3 text-gray-400 text-sm flex-shrink-0">
                         <button type="button" id="chat-share-btn" aria-label="Share chat link" class="hidden sm:inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 hover:text-gray-700 transition-colors">
@@ -145,6 +165,42 @@
             </div>
             <!-- Toast for "Link copied" -->
             <div id="share-toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2 bg-gray-800 text-white text-sm rounded-lg shadow-lg opacity-0 pointer-events-none transition-opacity duration-200 z-50" role="status" aria-live="polite">Link copied to clipboard</div>
+            <!-- Toast for voice input errors -->
+            <div id="voice-error-toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-3 bg-red-600 text-white text-sm rounded-lg shadow-lg max-w-xs text-center hidden opacity-0 transition-opacity duration-200 z-50" role="alert"></div>
+            <!-- Toast for literacy mode switch -->
+            <div id="literacy-toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2 bg-gray-800 text-white text-sm rounded-lg shadow-lg opacity-0 pointer-events-none transition-opacity duration-200 z-50" role="status"></div>
+
+            <!-- Health Timeline View (hidden by default) -->
+            <div id="timeline-view" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden">
+                <div class="p-4 sm:p-6 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+                    <h2 class="text-lg font-semibold text-gray-800">Health Timeline</h2>
+                    <div class="flex items-center gap-2">
+                        <select id="timeline-range" class="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-teal-500" onchange="typeof MediGuide !== 'undefined' && MediGuide.loadTimeline && MediGuide.loadTimeline()">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 3 months</option>
+                            <option value="all">All time</option>
+                        </select>
+                        <button type="button" id="timeline-download-btn" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-mg-start to-mg-end text-white hover:brightness-95 flex items-center gap-1.5" onclick="typeof MediGuide !== 'undefined' && MediGuide.downloadHealthReport && MediGuide.downloadHealthReport()">
+                            <i class="fas fa-download text-[10px]"></i> Download Health Report
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4">
+                    <div id="timeline-summary-card" class="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-gray-800">AI Health Summary</h3>
+                            <button type="button" id="timeline-refresh-summary" class="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1" onclick="typeof MediGuide !== 'undefined' && MediGuide.loadTimeline && MediGuide.loadTimeline()">
+                                <i class="fas fa-rotate-right"></i> Refresh
+                            </button>
+                        </div>
+                        <p id="timeline-summary-text" class="text-sm text-gray-600">Loading...</p>
+                    </div>
+                    <div id="timeline-entries" class="space-y-0">
+                        <!-- Timeline entries rendered by JS -->
+                    </div>
+                </div>
+            </div>
 
             <!-- Chat / Response Area (only scrollable region) -->
             <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4" id="chat-area">
@@ -226,19 +282,37 @@
             </div>
 
             <!-- Input Area -->
-            <div class="border-t border-gray-100 bg-gray-50 px-4 sm:px-6 py-4 min-w-0">
+            <div id="chat-input-area" class="border-t border-gray-100 bg-gray-50 px-4 sm:px-6 py-4 min-w-0">
 
                 <!-- Symptom Checker Input -->
                 <div id="input-symptom-checker" class="input-panel min-w-0">
                     <form id="symptom-form" class="flex gap-2 sm:gap-3 min-w-0" onsubmit="handleSymptomSubmit(event)">
-                        <input type="text" id="symptom-input"
-                               class="flex-1 min-w-0 px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
-                               placeholder="Describe your symptoms... e.g., headache, fever, sore throat">
-                        <button type="submit" id="symptom-btn"
-                                class="flex-shrink-0 px-4 sm:px-6 py-3 bg-gradient-to-r from-mg-start to-mg-end text-white rounded-xl transition-all duration-200 font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:brightness-95">
-                            <span>Send</span>
-                            <i class="fas fa-paper-plane text-xs"></i>
-                        </button>
+                        <div class="flex-1 min-w-0 flex flex-col">
+                            <div class="flex gap-2 min-w-0">
+                                <input type="text" id="symptom-input"
+                                       class="flex-1 min-w-0 px-3 sm:px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                                       placeholder="Describe your symptoms... e.g., headache, fever, sore throat">
+                                <button type="button" id="voice-input-btn" aria-label="Voice input"
+                                        class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl border border-gray-300 hover:bg-gray-50 hover:border-teal-300 transition-colors text-gray-600 hover:text-teal-600 relative"
+                                        title="Voice input requires Chrome or Edge"
+                                        onclick="typeof MediGuide !== 'undefined' && MediGuide.toggleVoiceInput && MediGuide.toggleVoiceInput()">
+                                    <i class="fas fa-microphone text-base" id="voice-icon"></i>
+                                    <span id="voice-listening-dot" class="hidden absolute inset-0 flex items-center justify-center">
+                                        <span class="voice-wave-dot w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                                    </span>
+                                </button>
+                                <button type="submit" id="symptom-btn"
+                                        class="flex-shrink-0 px-4 sm:px-6 py-3 bg-gradient-to-r from-mg-start to-mg-end text-white rounded-xl transition-all duration-200 font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:brightness-95">
+                                    <span>Send</span>
+                                    <i class="fas fa-paper-plane text-xs"></i>
+                                </button>
+                            </div>
+                            <p id="voice-status" class="text-[10px] text-gray-400 mt-1 hidden">Listening in: <span id="voice-lang-label">English</span></p>
+                            <label class="flex items-center gap-1.5 mt-1 text-[10px] text-gray-500 cursor-pointer">
+                                <input type="checkbox" id="voice-auto-submit" class="rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                                <span>Auto-submit after voice input</span>
+                            </label>
+                        </div>
                     </form>
                 </div>
 
@@ -336,8 +410,49 @@
         </div>
     </div>
 
+    <!-- Find doctors modal -->
+    <div id="doctors-modal" class="fixed inset-0 z-50 hidden" aria-hidden="true" role="dialog">
+        <div id="doctors-modal-backdrop" class="absolute inset-0 bg-black/60"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4 overflow-y-auto">
+            <div class="relative bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-gray-900">Find doctors near you</h2>
+                    <button type="button" id="doctors-modal-close" class="p-2 rounded-lg text-gray-400 hover:bg-gray-100">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="p-6 space-y-4 flex-1 overflow-y-auto">
+                    <p id="doctors-modal-hint" class="text-sm text-gray-500">Search US healthcare providers by specialty. Requires your location (city, state).</p>
+                    <div class="flex gap-2">
+                        <select id="doctors-specialty" class="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-teal-500">
+                            <option value="Internal Medicine">Internal Medicine</option>
+                            <option value="Family Medicine">Family Medicine</option>
+                            <option value="Cardiology">Cardiology</option>
+                            <option value="Pediatrics">Pediatrics</option>
+                            <option value="Neurology">Neurology</option>
+                            <option value="Orthopaedic Surgery">Orthopaedic Surgery</option>
+                            <option value="General Practice">General Practice</option>
+                            <option value="Emergency Medicine">Emergency Medicine</option>
+                            <option value="Dermatology">Dermatology</option>
+                            <option value="Psychiatry">Psychiatry</option>
+                            <option value="Gastroenterology">Gastroenterology</option>
+                            <option value="Pulmonology">Pulmonology</option>
+                            <option value="Obstetrics & Gynecology">Obstetrics & Gynecology</option>
+                        </select>
+                        <button type="button" id="doctors-search-btn" class="px-4 py-2 bg-gradient-to-r from-mg-start to-mg-end text-white rounded-lg text-sm font-medium hover:brightness-95">
+                            <i class="fas fa-search"></i> Search
+                        </button>
+                    </div>
+                    <div id="doctors-results" class="space-y-2 text-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/config.js') }}"></script>
     <script src="{{ url_for('static', filename='js/state.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/location.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/voice.js') }}"></script>
     <script src="{{ url_for('static', filename='js/render.js') }}"></script>
     <script src="{{ url_for('static', filename='js/persistence.js') }}"></script>
     <script src="{{ url_for('static', filename='js/api.js') }}"></script>

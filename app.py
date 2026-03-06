@@ -8,15 +8,23 @@ import os
 import traceback
 from urllib.parse import quote
 
-from flask import Flask, request, jsonify, render_template, redirect, session, url_for
+from flask import Flask, request, jsonify, render_template, redirect, session, url_for, Response
 from openai import AzureOpenAI
 
 from config import Config
 from prompts import get_system_prompt, DEFAULT_LANGUAGE
 from services.translator import translate
 from services.content_safety import analyze_safety
-from services.cosmos_store import store_session_record, get_recent_sessions
+from services.cosmos_store import (
+    store_session_record,
+    get_recent_sessions,
+    get_medication_history,
+    get_timeline_interactions,
+    get_user_preference,
+    set_user_preference,
+)
 from utils.files import get_file_extension, extract_pdf_text
+from utils.pdf_generator import build_er_prep_sheet, build_health_timeline_pdf
 
 # ---------------------------------------------------------------------------
 # App and OpenAI client
@@ -34,6 +42,75 @@ client = AzureOpenAI(
 DEPLOYMENT = Config.AZURE_OPENAI_DEPLOYMENT
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_and_strip_referral_specialty(reply: str):
+    """Extract REFERRAL_SPECIALTY from reply and return (cleaned_reply, taxonomy or '')."""
+    import re
+    if not reply:
+        return reply, ""
+    m = re.search(r"\n?\s*REFERRAL_SPECIALTY:\s*(.+?)\s*$", reply, re.IGNORECASE)
+    if not m:
+        return reply, ""
+    taxonomy = m.group(1).strip()
+    cleaned = re.sub(r"\n?\s*REFERRAL_SPECIALTY:\s*.+?\s*$", "", reply, flags=re.IGNORECASE).rstrip()
+    return cleaned, taxonomy
+
+
+def _parse_urgency_from_reply(reply: str) -> str:
+    """Extract urgency level from symptom checker reply. Returns HIGH, MEDIUM, or LOW."""
+    r = reply or ""
+    if "🔴" in r or "urgency" in r.lower() and "high" in r.lower():
+        return "HIGH"
+    if "🟡" in r or "medium" in r.lower():
+        return "MEDIUM"
+    return "LOW"
+
+
+def _generate_doctor_questions(symptoms: str, reply: str, language: str) -> list:
+    """Generate 5 doctor questions using Azure OpenAI based on symptoms and AI reply."""
+    try:
+        prompt = (
+            "Based on the following patient symptoms and triage response, generate exactly 5 short, "
+            "specific questions the patient should ask their doctor in the emergency room. "
+            "Each question should be one sentence. Output only the 5 questions, one per line, numbered 1-5. "
+            "Use simple language.\n\n"
+            f"Symptoms: {symptoms[:1500]}\n\n"
+            f"Triage summary: {reply[:800]}"
+        )
+        resp = client.chat.completions.create(
+            model=DEPLOYMENT,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=400,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        questions = []
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # Remove leading "1." etc
+            for i in range(1, 10):
+                if line.startswith(f"{i}.") or line.startswith(f"{i})"):
+                    line = line[2:].strip()
+                    break
+            if line:
+                questions.append(line)
+        return questions[:5]
+    except Exception:
+        return [
+            "What could be causing these symptoms?",
+            "What tests do you recommend?",
+            "Are there any immediate treatments I should know about?",
+            "When should I follow up?",
+            "Is there anything I should avoid doing?",
+        ]
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -46,6 +123,90 @@ def is_authenticated():
         return True
     principal = request.headers.get(EASY_AUTH_HEADER)
     return bool(principal and str(principal).strip())
+
+
+@app.route("/api/location", methods=["GET"])
+def get_location():
+    """Return approximate user location (city, region, country) from IP for area-based recommendations."""
+    try:
+        import httpx
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").strip().split(",")[0].strip() or None
+        url = "http://ip-api.com/json/"
+        if client_ip and client_ip != "127.0.0.1":
+            url = f"http://ip-api.com/json/{client_ip}"
+        with httpx.Client(timeout=3.0) as http:
+            r = http.get(url, params={"fields": "city,regionName,country"})
+        if r.status_code != 200:
+            return jsonify({"location": None, "city": None, "region": None, "country": None})
+        data = r.json()
+        city = (data.get("city") or "").strip()
+        region = (data.get("regionName") or "").strip()
+        country = (data.get("country") or "").strip()
+        parts = [p for p in [city, region, country] if p]
+        location_str = ", ".join(parts) if parts else None
+        return jsonify({"location": location_str, "city": city or None, "region": region or None, "country": country or None})
+    except Exception:
+        return jsonify({"location": None, "city": None, "region": None, "country": None})
+
+
+# NPPES taxonomy descriptions for doctor search (US only)
+NPPES_TAXONOMIES = [
+    "Cardiology", "Internal Medicine", "Family Medicine", "Pediatrics",
+    "Neurology", "Orthopaedic Surgery", "General Practice", "Emergency Medicine",
+    "Obstetrics & Gynecology", "Dermatology", "Psychiatry", "Gastroenterology",
+    "Pulmonology", "Endocrinology", "Nephrology", "Rheumatology", "Urology",
+]
+
+
+@app.route("/api/doctors", methods=["GET"])
+def get_doctors():
+    """Search US healthcare providers via NPPES (free, no API key). Requires city and state."""
+    try:
+        import httpx
+        city = (request.args.get("city") or "").strip()
+        state = (request.args.get("state") or "").strip()
+        taxonomy = (request.args.get("taxonomy") or request.args.get("taxonomy_description") or "Internal Medicine").strip()
+        limit = min(int(request.args.get("limit", 10)), 50)
+        if not city or not state:
+            return jsonify({"error": "city and state are required", "providers": []}), 400
+        with httpx.Client(timeout=8.0) as http:
+            r = http.get(
+                "https://npiregistry.cms.hhs.gov/api/",
+                params={
+                    "version": "2.1",
+                    "city": city,
+                    "state": state,
+                    "taxonomy_description": taxonomy,
+                    "limit": limit,
+                },
+            )
+        if r.status_code != 200:
+            return jsonify({"error": "Provider lookup failed", "providers": []}), 502
+        data = r.json()
+        results = data.get("result_count") or 0
+        entries = data.get("results") or []
+        providers = []
+        for e in entries:
+            basic = e.get("basic") or {}
+            addr_list = e.get("addresses") or []
+            addr = next((a for a in addr_list if (a.get("address_purpose") or "").lower() == "location"), addr_list[0] if addr_list else {})
+            taxonomies = e.get("taxonomies") or []
+            tax = next((t for t in taxonomies if t.get("primary")), taxonomies[0] if taxonomies else {})
+            providers.append({
+                "npi": e.get("number"),
+                "name": basic.get("first_name", "") + " " + basic.get("last_name", "").strip() or (basic.get("organization_name") or "").strip(),
+                "credential": basic.get("credential"),
+                "taxonomy": tax.get("desc") or taxonomy,
+                "address": ", ".join(filter(None, [
+                    addr.get("address_1"),
+                    addr.get("address_2"),
+                    (addr.get("city") or "") + ", " + (addr.get("state") or "") + " " + (addr.get("postal_code") or ""),
+                ])).strip(),
+            })
+        return jsonify({"providers": providers, "result_count": results})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e), "providers": []}), 500
 
 
 @app.route("/")
@@ -105,8 +266,13 @@ def chat():
         language = (data.get("language") or DEFAULT_LANGUAGE).lower()
         history = data.get("history") or []
         user_id = (data.get("userId") or "").strip()
+        literacy_mode = (data.get("literacyMode") or get_user_preference(user_id, "literacyMode") or "standard").lower()
+        user_location = (data.get("location") or data.get("userLocation") or "").strip() or None
+        user_city = (data.get("city") or "").strip() or None
+        user_state = (data.get("state") or data.get("region") or "").strip() or None
+        user_country = (data.get("country") or "").strip() or None
 
-        system_prompt = get_system_prompt("symptom-checker", language)
+        system_prompt = get_system_prompt("symptom-checker", language, literacy_mode, user_location)
         messages = [{"role": "system", "content": system_prompt}]
         for item in history:
             role = item.get("role")
@@ -122,8 +288,51 @@ def chat():
             max_tokens=1000,
         )
         raw_reply = response.choices[0].message.content
+        raw_reply, referral_specialty = _parse_and_strip_referral_specialty(raw_reply)
         safety = analyze_safety(raw_reply)
         reply = translate(raw_reply, language)
+
+        providers = []
+        if referral_specialty and user_city and user_state:
+            us_like = (user_country or "").lower() in ("us", "usa", "united states", "united states of america")
+            if us_like:
+                try:
+                    import httpx
+                    with httpx.Client(timeout=8.0) as http:
+                        r = http.get(
+                            "https://npiregistry.cms.hhs.gov/api/",
+                            params={
+                                "version": "2.1",
+                                "city": user_city,
+                                "state": user_state,
+                                "taxonomy_description": referral_specialty,
+                                "limit": 10,
+                            },
+                        )
+                    if r.status_code == 200:
+                        data = r.json()
+                        for e in (data.get("results") or [])[:10]:
+                            basic = e.get("basic") or {}
+                            addr_list = e.get("addresses") or []
+                            addr = next((a for a in addr_list if (a.get("address_purpose") or "").lower() == "location"), addr_list[0] if addr_list else {})
+                            taxonomies = e.get("taxonomies") or []
+                            tax = next((t for t in taxonomies if t.get("primary")), taxonomies[0] if taxonomies else {})
+                            name = (basic.get("first_name") or "") + " " + (basic.get("last_name") or "").strip()
+                            if not name.strip():
+                                name = (basic.get("organization_name") or "").strip()
+                            providers.append({
+                                "npi": e.get("number"),
+                                "name": name.strip(),
+                                "credential": basic.get("credential"),
+                                "taxonomy": tax.get("desc") or referral_specialty,
+                                "address": ", ".join(filter(None, [
+                                    addr.get("address_1"),
+                                    addr.get("address_2"),
+                                    (addr.get("city") or "") + ", " + (addr.get("state") or "") + " " + (addr.get("postal_code") or ""),
+                                ])).strip(),
+                            })
+                except Exception:
+                    pass
 
         store_session_record(
             user_id,
@@ -137,15 +346,35 @@ def chat():
             },
         )
 
-        return jsonify({
-            "reply": reply,
-            "meta": {
-                "feature": "symptom-checker",
-                "model": DEPLOYMENT,
-                "language": language,
-                "safety": safety,
-            },
-        })
+        urgency = _parse_urgency_from_reply(raw_reply)
+        meta = {
+            "feature": "symptom-checker",
+            "model": DEPLOYMENT,
+            "language": language,
+            "safety": safety,
+            "urgency": urgency,
+            "literacyMode": literacy_mode,
+        }
+        if providers:
+            meta["doctors"] = providers
+            meta["referralSpecialty"] = referral_specialty
+        if urgency == "HIGH":
+            symptoms_text = "\n".join(
+                (h.get("content") or "").strip()
+                for h in history
+                if h.get("role") == "user"
+            ) + "\n" + user_message
+            symptom_timeline = "As reported in this session (most recent first)."
+            doctor_questions = _generate_doctor_questions(symptoms_text, raw_reply, language)
+            meta["erPdfAvailable"] = True
+            meta["erPdfParams"] = {
+                "symptoms": symptoms_text.strip(),
+                "symptomTimeline": symptom_timeline,
+                "urgency": urgency,
+                "doctorQuestions": doctor_questions,
+            }
+
+        return jsonify({"reply": reply, "meta": meta})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -157,6 +386,8 @@ def analyze_report():
     try:
         language = (request.form.get("language") or DEFAULT_LANGUAGE).lower()
         user_id = (request.form.get("userId") or "").strip()
+        literacy_mode = (request.form.get("literacyMode") or get_user_preference(user_id, "literacyMode") or "standard").lower()
+        user_location = (request.form.get("location") or request.form.get("userLocation") or "").strip() or None
 
         if "file" not in request.files:
             return jsonify({"error": "No file uploaded."}), 400
@@ -180,7 +411,7 @@ def analyze_report():
             "For each value, say if it is normal or abnormal and why it matters.\n\n"
             f"{pdf_text[:8000]}"
         )
-        system_prompt = get_system_prompt("report-explainer", language)
+        system_prompt = get_system_prompt("report-explainer", language, literacy_mode, user_location)
 
         response = client.chat.completions.create(
             model=DEPLOYMENT,
@@ -212,6 +443,7 @@ def analyze_report():
                 "model": DEPLOYMENT,
                 "language": language,
                 "safety": safety,
+                "literacyMode": literacy_mode,
             },
         })
     except Exception as e:
@@ -230,6 +462,8 @@ def medication_info():
 
         language = (data.get("language") or DEFAULT_LANGUAGE).lower()
         user_id = (data.get("userId") or "").strip()
+        literacy_mode = (data.get("literacyMode") or get_user_preference(user_id, "literacyMode") or "standard").lower()
+        user_location = (data.get("location") or data.get("userLocation") or "").strip() or None
 
         user_message = (
             "The user provided the following list of medications (one or more, possibly separated by commas or new lines):\n"
@@ -242,7 +476,7 @@ def medication_info():
             "4) Explain your reasoning in simple language.\n"
             "5) End with a clear safety reminder to always speak to a doctor or pharmacist before changing medications."
         )
-        system_prompt = get_system_prompt("medication-safety", language)
+        system_prompt = get_system_prompt("medication-safety", language, literacy_mode, user_location)
 
         response = client.chat.completions.create(
             model=DEPLOYMENT,
@@ -275,6 +509,7 @@ def medication_info():
                 "model": DEPLOYMENT,
                 "language": language,
                 "safety": safety,
+                "literacyMode": literacy_mode,
             },
         })
     except Exception as e:
@@ -288,6 +523,8 @@ def analyze_image():
     try:
         language = (request.form.get("language") or DEFAULT_LANGUAGE).lower()
         user_id = (request.form.get("userId") or "").strip()
+        literacy_mode = (request.form.get("literacyMode") or get_user_preference(user_id, "literacyMode") or "standard").lower()
+        user_location = (request.form.get("location") or request.form.get("userLocation") or "").strip() or None
 
         if "file" not in request.files:
             return jsonify({"error": "No image uploaded."}), 400
@@ -309,7 +546,7 @@ def analyze_image():
             ".gif": "image/gif",
         }
         mime_type = mime_map.get(ext, "image/png")
-        system_prompt = get_system_prompt("image-analysis", language)
+        system_prompt = get_system_prompt("image-analysis", language, literacy_mode, user_location)
 
         response = client.chat.completions.create(
             model=DEPLOYMENT,
@@ -353,8 +590,26 @@ def analyze_image():
                 "model": DEPLOYMENT,
                 "language": language,
                 "safety": safety,
+                "literacyMode": literacy_mode,
             },
         })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/save-preference", methods=["POST"])
+def save_preference():
+    """Save user preference (e.g. literacy mode) to Cosmos DB."""
+    try:
+        data = request.get_json() or {}
+        user_id = (data.get("userId") or "").strip()
+        key = (data.get("key") or "").strip()
+        value = data.get("value")
+        if not user_id or not key:
+            return jsonify({"error": "Missing userId or key."}), 400
+        set_user_preference(user_id, key, value)
+        return jsonify({"status": "ok"})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -387,6 +642,193 @@ def report_answer():
             },
         )
         return jsonify({"status": "ok"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generate-er-pdf", methods=["POST"])
+def generate_er_pdf():
+    """Generate and return a downloadable ER Prep Sheet PDF."""
+    try:
+        data = request.get_json() or {}
+        user_id = (data.get("patient_id") or data.get("userId") or "").strip()
+        patient_name = (data.get("patient_name") or "").strip() or "Patient"
+        symptoms = (data.get("symptoms") or "").strip() or "Not specified"
+        symptom_timeline = (data.get("symptom_timeline") or data.get("symptomTimeline") or "").strip() or "As reported in this session."
+        urgency = (data.get("urgency") or "HIGH").upper()
+        doctor_questions = data.get("doctor_questions") or data.get("doctorQuestions") or []
+
+        medications = get_medication_history(user_id, limit=10) if user_id else []
+        raw_items = get_timeline_interactions(user_id, limit=20) if user_id else []
+        past_interactions = []
+        for item in raw_items:
+            feat = item.get("feature", "")
+            payload = item.get("payload") or {}
+            if feat == "symptom-checker":
+                summary = (payload.get("latestUserMessage") or "")[:80] or "Symptom check"
+            elif feat == "medication-safety":
+                summary = (payload.get("medicationInput") or "")[:80] or "Medication check"
+            elif feat == "report-explainer":
+                summary = "Blood test / report"
+            elif feat == "image-analysis":
+                summary = "Image analysis"
+            else:
+                summary = feat or "Interaction"
+            past_interactions.append({"feature": feat, "summary": summary})
+
+        if not doctor_questions:
+            doctor_questions = _generate_doctor_questions(symptoms, "", "en")
+
+        pdf_bytes = build_er_prep_sheet(
+            patient_name=patient_name,
+            symptoms=symptoms,
+            symptom_timeline=symptom_timeline,
+            urgency=urgency,
+            medications=medications,
+            past_interactions=past_interactions[:3],
+            doctor_questions=doctor_questions,
+        )
+
+        from datetime import datetime
+        filename = f"MediGuide_ER_Prep_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.pdf"
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+def _generate_health_summary(interactions: list, language: str) -> str:
+    """Generate a 3-sentence AI health summary from interactions."""
+    if not interactions:
+        return "No recent health interactions to summarize."
+    try:
+        lines = []
+        for i, item in enumerate(interactions[:15], 1):
+            feat = item.get("feature", "")
+            payload = item.get("payload") or {}
+            created = item.get("createdAt", "")[:10]
+            if feat == "symptom-checker":
+                msg = (payload.get("latestUserMessage") or "")[:120]
+                lines.append(f"{created} Symptom: {msg}")
+            elif feat == "medication-safety":
+                med = (payload.get("medicationInput") or "")[:80]
+                lines.append(f"{created} Medication: {med}")
+            elif feat == "report-explainer":
+                lines.append(f"{created} Blood test/report")
+            elif feat == "image-analysis":
+                lines.append(f"{created} Image analysis")
+        text = "\n".join(lines)
+        prompt = (
+            "Based on these health interactions, write a 3-sentence health summary for the patient "
+            "highlighting patterns, concerns, and any positive notes. Keep it simple and reassuring. "
+            "Do not diagnose. Output only the 3 sentences, no numbering.\n\n" + text
+        )
+        resp = client.chat.completions.create(
+            model=DEPLOYMENT,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=300,
+        )
+        return (resp.choices[0].message.content or "").strip() or "No summary available."
+    except Exception:
+        return "Unable to generate summary at this time."
+
+
+def _timeline_entry_from_item(item: dict) -> dict:
+    """Convert Cosmos item to timeline entry format."""
+    feat = item.get("feature", "")
+    payload = item.get("payload") or {}
+    created = item.get("createdAt", "")
+    # Parse urgency from reply if symptom-checker or image-analysis
+    urgency = "LOW"
+    reply = (payload.get("assistantReply") or "").lower()
+    if "🔴" in (payload.get("assistantReply") or ""):
+        urgency = "HIGH"
+    elif "🟡" in (payload.get("assistantReply") or ""):
+        urgency = "MEDIUM"
+    else:
+        if "high" in reply and ("urgency" in reply or "urgent" in reply):
+            urgency = "HIGH"
+        elif "medium" in reply:
+            urgency = "MEDIUM"
+    summary = ""
+    if feat == "symptom-checker":
+        summary = (payload.get("latestUserMessage") or "")[:100] or "Symptom check"
+    elif feat == "medication-safety":
+        summary = (payload.get("medicationInput") or "")[:80] or "Medication check"
+    elif feat == "report-explainer":
+        summary = "Blood test / report"
+    elif feat == "image-analysis":
+        summary = "X-ray / imaging"
+    else:
+        summary = feat or "Interaction"
+    return {
+        "id": item.get("id"),
+        "date": created,
+        "feature": feat,
+        "featureLabel": "Symptom Check" if feat == "symptom-checker" else "Medication Check" if feat == "medication-safety" else "Blood Test Analysis" if feat == "report-explainer" else "Image Analysis",
+        "summary": summary,
+        "urgency": urgency,
+        "detail": payload.get("assistantReply") or payload.get("latestUserMessage") or "",
+    }
+
+
+@app.route("/timeline", methods=["GET"])
+def timeline():
+    """Return health timeline for the user with optional date filter and AI summary."""
+    try:
+        user_id = (request.args.get("userId") or "").strip()
+        if not user_id:
+            return jsonify({"items": [], "summary": ""})
+
+        range_val = request.args.get("range", "30")
+        since_days = None
+        if range_val == "7":
+            since_days = 7
+        elif range_val == "30":
+            since_days = 30
+        elif range_val == "90":
+            since_days = 90
+        # "all" = None
+
+        items = get_timeline_interactions(user_id, limit=100, since_days=since_days)
+        entries = [_timeline_entry_from_item(it) for it in items]
+        summary = _generate_health_summary(items, "en")
+        return jsonify({"items": entries, "summary": summary})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"items": [], "summary": "", "error": str(e)}), 500
+
+
+@app.route("/download-health-report", methods=["POST"])
+def download_health_report():
+    """Generate and return a PDF of the health timeline."""
+    try:
+        data = request.get_json() or {}
+        user_id = (data.get("userId") or "").strip()
+        patient_name = (data.get("patientName") or "").strip() or "Patient"
+        date_range = (data.get("dateRange") or "").strip() or "Last 30 days"
+        ai_summary = (data.get("summary") or "").strip() or "No summary available."
+        entries = data.get("entries") or []
+
+        pdf_bytes = build_health_timeline_pdf(
+            patient_name=patient_name,
+            date_range=date_range,
+            ai_summary=ai_summary,
+            entries=entries,
+        )
+        from datetime import datetime
+        filename = f"MediGuide_Health_Report_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.pdf"
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

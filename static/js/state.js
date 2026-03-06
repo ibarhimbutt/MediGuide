@@ -9,7 +9,13 @@
     MG.state = {
         currentFeature: "symptom-checker",
         currentLanguage: "en",
+        literacyMode: "standard",
         userId: null,
+        userDisplayName: null,
+        userLocation: null,
+        userCity: null,
+        userState: null,
+        userCountry: null,
         symptomHistory: [],
         messageLog: [],
         selectedPdfFile: null,

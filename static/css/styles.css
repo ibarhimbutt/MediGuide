@@ -91,3 +91,18 @@ input:focus-visible {
     outline: 2px solid #3190ff;
     outline-offset: 2px;
 }
+
+/* Voice input: waveform / pulsing dot */
+.voice-wave-dot {
+    animation: voicePulse 1.2s ease-in-out infinite both;
+}
+@keyframes voicePulse {
+    0%, 100% {
+        transform: scale(0.8);
+        opacity: 0.7;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+}

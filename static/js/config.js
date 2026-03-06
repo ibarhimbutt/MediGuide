@@ -11,6 +11,7 @@
         "report-explainer": "fa-file-medical",
         "medication-info": "fa-pills",
         "image-analysis": "fa-x-ray",
+        "health-timeline": "fa-clock-rotate-left",
     };
     window.MediGuide.LANGUAGE_LABELS = {
         en: "English",

@@ -33,11 +33,16 @@
         var model = meta.model || "Azure OpenAI";
         var lang = meta.language || state.currentLanguage || "en";
         var pretty = langLabels[lang] || lang;
+        var literacyMode = meta.literacyMode || "standard";
+        var literacyLabel = literacyMode === "simple" ? "Simple Mode" : literacyMode === "medical" ? "Medical Mode" : "Standard Mode";
+        var disclaimer = literacyMode === "medical" ? '<span class="inline-flex items-center gap-1 text-amber-600"><i class="fas fa-info-circle"></i><span>Clinical reference only — does not replace clinical judgment</span></span>' : "";
         return (
             '<div class="mt-3 pt-2 border-t border-gray-100 flex flex-wrap items-center gap-3 text-[11px] text-gray-400">' +
             '<span class="inline-flex items-center gap-1"><i class="fas fa-microchip"></i><span>' + model + "</span></span>" +
             '<span class="inline-flex items-center gap-1"><i class="fas fa-language"></i><span>' + pretty + "</span></span>" +
+            '<span class="inline-flex items-center gap-1"><i class="fas fa-book-medical"></i><span>Explained in: ' + literacyLabel + "</span></span>" +
             '<span class="inline-flex items-center gap-1"><i class="fas fa-shield-heart"></i><span>AI guidance only — not medical advice</span></span>' +
+            disclaimer +
             "</div>"
         );
     }
@@ -88,13 +93,37 @@
         } else {
             var aiIcon = icon || icons[feature] || "fa-heartbeat";
             var safety = meta && meta.safety ? meta.safety : null;
+            var erAlert = "";
+            if (meta && meta.erPdfAvailable && meta.erPdfParams) {
+                var params = meta.erPdfParams;
+                var paramsJson = encodeURIComponent(JSON.stringify(params));
+                erAlert =
+                    '<div class="mt-3 p-4 rounded-xl bg-red-50 border border-red-200">' +
+                    '<p class="text-sm font-semibold text-red-800 flex items-center gap-2">' +
+                    '<i class="fas fa-exclamation-triangle"></i> HIGH URGENCY DETECTED — Download your ER Prep Sheet</p>' +
+                    '<button type="button" class="mt-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 er-pdf-download-btn" ' +
+                    'data-params="' + paramsJson + '">' +
+                    '<i class="fas fa-download"></i> Download ER Prep Sheet</button></div>';
+            }
+            var doctorsCard = "";
+            if (meta && meta.doctors && meta.doctors.length) {
+                var specialty = meta.referralSpecialty || "Provider";
+                doctorsCard = '<div class="mt-3 p-4 rounded-xl bg-teal-50 border border-teal-200">' +
+                    '<p class="text-sm font-semibold text-teal-800 flex items-center gap-2"><i class="fas fa-user-doctor"></i> ' + escapeHtml(specialty) + ' providers near you</p>' +
+                    '<ul class="mt-2 space-y-2 text-xs text-gray-700">';
+                meta.doctors.forEach(function (d) {
+                    doctorsCard += '<li class="flex flex-col gap-0.5"><span class="font-medium">' + escapeHtml(d.name || "Provider") + (d.credential ? ' <span class="text-gray-500">' + escapeHtml(d.credential) + '</span>' : '') + '</span>' +
+                        (d.address ? '<span class="text-gray-500">' + escapeHtml(d.address) + '</span>' : '') + '</li>';
+                });
+                doctorsCard += '</ul><p class="mt-2 text-[10px] text-gray-500">Source: NPPES (US National Provider Identifier Registry)</p></div>';
+            }
             wrapper.innerHTML =
                 '<div class="w-16 h-16 rounded-full flex items-center justify-center shrink-0 mt-1 overflow-hidden">' +
                 '<img src="/static/images/robot.png" alt="MediGuide AI" class="w-full h-full object-cover">' +
                 "</div>" +
                 '<div class="max-w-4xl"><div class="bg-white text-sm leading-relaxed text-gray-700 ai-response">' +
                 formatMarkdown(content) + renderAiMeta(meta) + renderSafetyMeta(safety) + renderReportButton(meta, content) +
-                "</div></div>";
+                "</div>" + erAlert + doctorsCard + "</div>";
         }
 
         chatArea.appendChild(wrapper);
