@@ -9,10 +9,11 @@ import traceback
 from urllib.parse import quote
 
 from flask import Flask, request, jsonify, render_template, redirect, session, url_for, Response
-from openai import AzureOpenAI
+from flask_cors import CORS
+from openai import AzureOpenAI, BadRequestError
 
 from config import Config
-from prompts import get_system_prompt, DEFAULT_LANGUAGE
+from prompts import get_system_prompt, DEFAULT_LANGUAGE, MEDICAL_CLASSIFIER_PROMPT, REFUSAL_MESSAGE, ESSAY_REFUSAL_MESSAGE, JAILBREAK_REFUSAL_MESSAGE
 from services.translator import translate
 from services.content_safety import analyze_safety
 from services.cosmos_store import (
@@ -31,6 +32,7 @@ from utils.pdf_generator import build_er_prep_sheet, build_health_timeline_pdf
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True)
 app.config["MAX_CONTENT_LENGTH"] = Config.MAX_FILE_SIZE_MB * 1024 * 1024
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-in-production")
 
@@ -44,6 +46,73 @@ DEPLOYMENT = Config.AZURE_OPENAI_DEPLOYMENT
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+_GREETING_WORDS = {
+    "hi", "hello", "hey", "hii", "hiii", "yo", "sup", "howdy",
+    "good morning", "good afternoon", "good evening", "good night",
+    "morning", "evening", "afternoon",
+    "assalam", "salam", "salaam", "assalamualaikum", "wa alaikum",
+    "namaste", "namaskar",
+    "thanks", "thank you", "ok", "okay", "yes", "no", "sure", "please",
+    "how are you", "whats up", "what's up",
+    "help", "help me", "i need help", "can you help",
+    "start", "begin", "go",
+}
+
+
+def _is_content_filter_error(exc: Exception) -> bool:
+    """True if the exception is an Azure OpenAI content filter / jailbreak block."""
+    if isinstance(exc, BadRequestError):
+        msg = str(exc).lower()
+        return "content_filter" in msg or "content management policy" in msg or "jailbreak" in msg
+    return False
+
+
+def is_essay_request(user_input: str) -> bool:
+    """True if the user is asking for essay/article/assignment-style content (we refuse even for medical topics)."""
+    if not user_input or not user_input.strip():
+        return False
+    t = user_input.strip().lower()
+    patterns = (
+        "write an essay",
+        "write a paragraph",
+        "write an article",
+        "write me an essay",
+        "write me a paragraph",
+        "write me an article",
+        "write an assignment",
+        "write me an assignment",
+        "write a report",
+        "write me a report",
+    )
+    return any(p in t for p in patterns)
+
+
+def is_medical_query(user_input: str) -> bool:
+    """Lightweight Azure OpenAI call to classify whether the query is health/medical-related.
+    Returns True if medical, False if off-topic. Defaults to True on errors (fail-open).
+    Greetings and short conversational starters are always allowed through."""
+    if not user_input or not user_input.strip():
+        return True
+    text = user_input.strip()
+    normalised = text.lower().rstrip("!?.,:; ")
+    if normalised in _GREETING_WORDS or len(normalised) <= 4:
+        return True
+    for g in _GREETING_WORDS:
+        if normalised.startswith(g + " ") or normalised.startswith(g + ","):
+            return True
+    try:
+        resp = client.chat.completions.create(
+            model=DEPLOYMENT,
+            messages=[{"role": "user", "content": MEDICAL_CLASSIFIER_PROMPT.format(user_input=text[:500])}],
+            temperature=0.0,
+            max_tokens=5,
+        )
+        answer = (resp.choices[0].message.content or "").strip().lower()
+        return answer.startswith("yes")
+    except Exception:
+        return True
 
 
 def _parse_and_strip_referral_specialty(reply: str):
@@ -142,11 +211,43 @@ def get_location():
         city = (data.get("city") or "").strip()
         region = (data.get("regionName") or "").strip()
         country = (data.get("country") or "").strip()
+        state_abbrev = _normalize_state(region) if region else None
         parts = [p for p in [city, region, country] if p]
         location_str = ", ".join(parts) if parts else None
-        return jsonify({"location": location_str, "city": city or None, "region": region or None, "country": country or None})
+        return jsonify({
+            "location": location_str,
+            "city": city or None,
+            "region": region or None,
+            "state": state_abbrev,
+            "country": country or None,
+        })
     except Exception:
         return jsonify({"location": None, "city": None, "region": None, "country": None})
+
+
+US_STATE_ABBREV = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
+    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
+    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
+    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+    "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+    "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
+    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
+    "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
+    "wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC",
+}
+
+
+def _normalize_state(state_val: str) -> str:
+    """Convert full state name to 2-letter abbreviation for NPPES API. Pass through if already abbreviated."""
+    s = state_val.strip()
+    if len(s) == 2 and s.isalpha():
+        return s.upper()
+    return US_STATE_ABBREV.get(s.lower(), s)
 
 
 # NPPES taxonomy descriptions for doctor search (US only)
@@ -164,11 +265,12 @@ def get_doctors():
     try:
         import httpx
         city = (request.args.get("city") or "").strip()
-        state = (request.args.get("state") or "").strip()
+        state_raw = (request.args.get("state") or "").strip()
         taxonomy = (request.args.get("taxonomy") or request.args.get("taxonomy_description") or "Internal Medicine").strip()
         limit = min(int(request.args.get("limit", 10)), 50)
-        if not city or not state:
+        if not city or not state_raw:
             return jsonify({"error": "city and state are required", "providers": []}), 400
+        state = _normalize_state(state_raw)
         with httpx.Client(timeout=8.0) as http:
             r = http.get(
                 "https://npiregistry.cms.hhs.gov/api/",
@@ -272,6 +374,35 @@ def chat():
         user_state = (data.get("state") or data.get("region") or "").strip() or None
         user_country = (data.get("country") or "").strip() or None
 
+        is_first_message = not history or len(history) == 0
+
+        if is_essay_request(user_message):
+            return jsonify({
+                "reply": ESSAY_REFUSAL_MESSAGE,
+                "meta": {
+                    "feature": "symptom-checker",
+                    "model": DEPLOYMENT,
+                    "language": language,
+                    "safety": {},
+                    "urgency": "LOW",
+                    "literacyMode": literacy_mode,
+                    "blocked": True,
+                },
+            })
+        if is_first_message and not is_medical_query(user_message):
+            return jsonify({
+                "reply": REFUSAL_MESSAGE,
+                "meta": {
+                    "feature": "symptom-checker",
+                    "model": DEPLOYMENT,
+                    "language": language,
+                    "safety": {},
+                    "urgency": "LOW",
+                    "literacyMode": literacy_mode,
+                    "blocked": True,
+                },
+            })
+
         if not user_location or not user_city or not user_state:
             try:
                 import httpx
@@ -324,7 +455,7 @@ def chat():
                             params={
                                 "version": "2.1",
                                 "city": user_city,
-                                "state": user_state,
+                                "state": _normalize_state(user_state),
                                 "taxonomy_description": referral_specialty,
                                 "limit": 10,
                             },
@@ -397,6 +528,11 @@ def chat():
         return jsonify({"reply": reply, "meta": meta})
     except Exception as e:
         traceback.print_exc()
+        if _is_content_filter_error(e):
+            return jsonify({
+                "reply": JAILBREAK_REFUSAL_MESSAGE,
+                "meta": {"feature": "symptom-checker", "model": DEPLOYMENT, "blocked": True},
+            })
         return jsonify({"error": str(e)}), 500
 
 
@@ -468,6 +604,11 @@ def analyze_report():
         })
     except Exception as e:
         traceback.print_exc()
+        if _is_content_filter_error(e):
+            return jsonify({
+                "reply": JAILBREAK_REFUSAL_MESSAGE,
+                "meta": {"feature": "report-explainer", "model": DEPLOYMENT, "blocked": True},
+            })
         return jsonify({"error": str(e)}), 500
 
 
@@ -484,6 +625,19 @@ def medication_info():
         user_id = (data.get("userId") or "").strip()
         literacy_mode = (data.get("literacyMode") or get_user_preference(user_id, "literacyMode") or "standard").lower()
         user_location = (data.get("location") or data.get("userLocation") or "").strip() or None
+
+        if not is_medical_query(raw_value):
+            return jsonify({
+                "reply": REFUSAL_MESSAGE,
+                "meta": {
+                    "feature": "medication-safety",
+                    "model": DEPLOYMENT,
+                    "language": language,
+                    "safety": {},
+                    "literacyMode": literacy_mode,
+                    "blocked": True,
+                },
+            })
 
         user_message = (
             "The user provided the following list of medications (one or more, possibly separated by commas or new lines):\n"
@@ -534,6 +688,11 @@ def medication_info():
         })
     except Exception as e:
         traceback.print_exc()
+        if _is_content_filter_error(e):
+            return jsonify({
+                "reply": JAILBREAK_REFUSAL_MESSAGE,
+                "meta": {"feature": "medication-safety", "model": DEPLOYMENT, "blocked": True},
+            })
         return jsonify({"error": str(e)}), 500
 
 
@@ -615,6 +774,11 @@ def analyze_image():
         })
     except Exception as e:
         traceback.print_exc()
+        if _is_content_filter_error(e):
+            return jsonify({
+                "reply": JAILBREAK_REFUSAL_MESSAGE,
+                "meta": {"feature": "image-analysis", "model": DEPLOYMENT, "blocked": True},
+            })
         return jsonify({"error": str(e)}), 500
 
 
@@ -931,4 +1095,4 @@ def history():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5000)

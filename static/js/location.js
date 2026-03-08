@@ -30,7 +30,7 @@
             if (locationString) {
                 state.userLocation = locationString;
                 state.userCity = (locData && locData.city) || null;
-                state.userState = (locData && (locData.region || locData.state)) || null;
+                state.userState = (locData && (locData.stateAbbrev || locData.state || locData.region)) || null;
                 state.userCountry = (locData && (locData.country || locData.country_name)) || null;
                 try {
                     localStorage.setItem("mediguideLocation", locationString);
@@ -42,6 +42,7 @@
         fetch("/api/location")
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                if (data.state) data.stateAbbrev = data.state;
                 var loc = data.location || formatLocation(data);
                 if (loc) return done(loc, data);
                 throw new Error("No location");
@@ -90,6 +91,18 @@
                 text.textContent = loc;
                 wrap.classList.remove("hidden");
                 wrap.classList.add("flex");
+            }
+            var findDoctorsBtn = document.getElementById("find-doctors-btn");
+            if (findDoctorsBtn) {
+                var country = (state.userCountry || "").toLowerCase().trim();
+                var isUS = country === "united states" || country === "us" || country === "usa";
+                if (isUS) {
+                    findDoctorsBtn.classList.remove("hidden");
+                    findDoctorsBtn.classList.add("flex");
+                } else {
+                    findDoctorsBtn.classList.remove("flex");
+                    findDoctorsBtn.classList.add("hidden");
+                }
             }
         });
     }

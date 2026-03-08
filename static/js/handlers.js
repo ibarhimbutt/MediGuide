@@ -410,6 +410,17 @@
 
         MG.switchFeature("symptom-checker");
         if (welcome) welcome.style.display = "";
+
+        MG.addMessage(
+            "Hello! I'm MediGuide AI — your personal health assistant. " +
+            "I'm here to help with **symptoms**, **medications**, **health concerns**, and **medical triage** only. " +
+            "How can I help you today?",
+            "assistant",
+            null,
+            { feature: "symptom-checker", model: "MediGuide AI" },
+            { record: false }
+        );
+
         if (MG.persistSession) MG.persistSession();
     };
 

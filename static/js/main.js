@@ -55,6 +55,18 @@
         MG.setupDragDrop("image-drop-zone", "image-input", "image");
         MG.restoreSession();
         MG.setLanguage(MG.state.currentLanguage);
+
+        if (!MG.state.messageLog || MG.state.messageLog.length === 0) {
+            MG.addMessage(
+                "Hello! I'm MediGuide AI — your personal health assistant. " +
+                "I'm here to help with **symptoms**, **medications**, **health concerns**, and **medical triage** only. " +
+                "How can I help you today?",
+                "assistant",
+                null,
+                { feature: "symptom-checker", model: "MediGuide AI" },
+                { record: false }
+            );
+        }
         applySavedSidebarState();
 
         var toggleBtn = document.getElementById("sidebar-toggle");
