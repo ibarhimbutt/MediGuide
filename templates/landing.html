@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediGuide AI — Sign in</title>
-    <link rel="icon" type="image/png" sizes="28x36" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <link rel="icon" type="image/png" sizes="56x72" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <link rel="apple-touch-icon" sizes="144x144" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="icon" type="image/png" sizes="28x36" href="{{ url_for('static', filename='images/favicon.png') }}?v={{ asset_version|default('0') }}">
+    <link rel="icon" type="image/png" sizes="56x72" href="{{ url_for('static', filename='images/favicon.png') }}?v={{ asset_version|default('0') }}">
+    <link rel="apple-touch-icon" sizes="144x144" href="{{ url_for('static', filename='images/favicon.png') }}?v={{ asset_version|default('0') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -27,7 +27,7 @@
             <!-- Logo & mascot -->
             <div class="pt-10 pb-4 px-6 flex flex-col items-center">
                 <div class="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden flex-shrink-0 mb-4">
-                    <img src="{{ url_for('static', filename='images/robot.png') }}" alt="MediGuide AI" class="w-full h-full object-contain">
+                    <img src="{{ url_for('static', filename='images/robot.png') }}?v={{ asset_version|default('0') }}" alt="MediGuide AI" class="w-full h-full object-contain">
                 </div>
                 <h1 class="text-xl font-bold text-gray-900">
                     MediGuide <span class="bg-gradient-to-r from-mg-start to-mg-end bg-clip-text text-transparent">AI</span>

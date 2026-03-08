@@ -5,10 +5,11 @@ Routes only; prompts, services, and file utils live in dedicated modules.
 
 import base64
 import os
+import time
 import traceback
 from urllib.parse import quote
 
-from flask import Flask, request, jsonify, render_template, redirect, session, url_for, Response
+from flask import Flask, request, jsonify, render_template, redirect, session, url_for, Response, make_response
 from openai import AzureOpenAI, BadRequestError
 
 from config import Config
@@ -40,6 +41,9 @@ client = AzureOpenAI(
     api_version=Config.AZURE_OPENAI_API_VERSION,
 )
 DEPLOYMENT = Config.AZURE_OPENAI_DEPLOYMENT
+
+# Cache-busting version for static assets (changes each deploy/restart so browsers load new JS/CSS)
+ASSET_VERSION = os.environ.get("ASSET_VERSION") or str(int(time.time()))
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -314,7 +318,9 @@ def index():
     """Landing / login: if authenticated redirect to dashboard, else show sign-in page."""
     if is_authenticated():
         return redirect("/chat")
-    return render_template("landing.html")
+    resp = make_response(render_template("landing.html", asset_version=ASSET_VERSION))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 @app.route("/logout")
@@ -339,12 +345,15 @@ def chat_page():
         base = request.url_root.rstrip("/")
         # Use relative path so Azure may redirect straight to app and skip the "You have been signed out" page
         logout_url = f"{base}/.auth/logout?post_logout_redirect_uri={quote('/')}"
-    return render_template(
+    resp = make_response(render_template(
         "index.html",
         user_display_name=user_display_name,
         is_guest=is_guest,
         logout_url=logout_url,
-    )
+        asset_version=ASSET_VERSION,
+    ))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 @app.route("/guest")
