@@ -9,7 +9,6 @@ import traceback
 from urllib.parse import quote
 
 from flask import Flask, request, jsonify, render_template, redirect, session, url_for, Response
-from flask_cors import CORS
 from openai import AzureOpenAI, BadRequestError
 
 from config import Config
@@ -32,7 +31,6 @@ from utils.pdf_generator import build_er_prep_sheet, build_health_timeline_pdf
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
 app.config["MAX_CONTENT_LENGTH"] = Config.MAX_FILE_SIZE_MB * 1024 * 1024
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-in-production")
 
@@ -1095,4 +1093,4 @@ def history():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, port=5000)
