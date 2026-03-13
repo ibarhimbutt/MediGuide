@@ -226,7 +226,7 @@
                             </p>
                             <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
                                 <!-- Check my symptoms (highlighted) -->
-                                <button onclick="switchFeature('symptom-checker');"
+                                <button onclick="startNewChat();"
                                         class="text-left px-4 py-3 rounded-2xl bg-gradient-to-r from-mg-start to-mg-end text-white border-0 hover:brightness-95 transition-all duration-200 group shadow-sm min-w-0">
                                     <div class="flex items-center justify-between gap-2 min-w-0">
                                         <div class="min-w-0">
@@ -238,7 +238,7 @@
                                 </button>
 
                                 <!-- Explain my blood test -->
-                                <button onclick="switchFeature('report-explainer')"
+                                <button onclick="startNewChat(); switchFeature('report-explainer');"
                                         class="text-left px-4 py-3 rounded-2xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 hover:shadow-md transition-all duration-200 group min-w-0">
                                     <div class="flex items-center justify-between gap-2 min-w-0">
                                         <div class="min-w-0">
@@ -250,7 +250,7 @@
                                 </button>
 
                                 <!-- Analyze a medical image -->
-                                <button onclick="switchFeature('image-analysis')"
+                                <button onclick="startNewChat(); switchFeature('image-analysis');"
                                         class="text-left px-4 py-3 rounded-2xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 hover:shadow-md transition-all duration-200 group min-w-0">
                                     <div class="flex items-center justify-between gap-2 min-w-0">
                                         <div class="min-w-0">
@@ -262,7 +262,7 @@
                                 </button>
 
                                 <!-- Check medication safety -->
-                                <button onclick="switchFeature('medication-info'); insertExample('Paracetamol, Ibuprofen')"
+                                <button onclick="startNewChat(); switchFeature('medication-info'); insertExample('Paracetamol, Ibuprofen')"
                                         class="text-left px-4 py-3 rounded-2xl border border-gray-200 hover:bg-gray-50 hover:border-teal-200 hover:shadow-md transition-all duration-200 group min-w-0">
                                     <div class="flex items-center justify-between gap-2 min-w-0">
                                         <div class="min-w-0">
