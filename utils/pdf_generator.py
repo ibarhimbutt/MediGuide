@@ -84,14 +84,9 @@ def build_er_prep_sheet(
     story.append(Paragraph(f"<b>Name:</b> {patient_name}", _body_style()))
     story.append(Spacer(1, 4))
 
-    # Symptoms
-    story.append(Paragraph("Symptoms Described", _section_style()))
+    # Latest MediGuide summary (single, latest assistant response)
+    story.append(Paragraph("Latest MediGuide AI Summary", _section_style()))
     story.append(Paragraph(symptoms.replace("\n", "<br/>"), _body_style()))
-    story.append(Spacer(1, 4))
-
-    # Symptoms timeline
-    story.append(Paragraph("Symptom Timeline", _section_style()))
-    story.append(Paragraph(symptom_timeline.replace("\n", "<br/>"), _body_style()))
     story.append(Spacer(1, 4))
 
     # Urgency

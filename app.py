@@ -517,17 +517,17 @@ def chat():
             meta["doctors"] = providers
             meta["referralSpecialty"] = referral_specialty
         if urgency == "HIGH":
+            # Build ER Prep Sheet parameters using the latest MediGuide reply instead of the full chat history.
             symptoms_text = "\n".join(
                 (h.get("content") or "").strip()
                 for h in history
                 if h.get("role") == "user"
             ) + "\n" + user_message
-            symptom_timeline = "As reported in this session (most recent first)."
             doctor_questions = _generate_doctor_questions(symptoms_text, raw_reply, language)
             meta["erPdfAvailable"] = True
             meta["erPdfParams"] = {
-                "symptoms": symptoms_text.strip(),
-                "symptomTimeline": symptom_timeline,
+                # Use the translated latest reply as the main summary shown in the PDF.
+                "summary": reply,
                 "urgency": urgency,
                 "doctorQuestions": doctor_questions,
             }
@@ -845,8 +845,9 @@ def generate_er_pdf():
         data = request.get_json() or {}
         user_id = (data.get("patient_id") or data.get("userId") or "").strip()
         patient_name = (data.get("patient_name") or "").strip() or "Patient"
-        symptoms = (data.get("symptoms") or "").strip() or "Not specified"
-        symptom_timeline = (data.get("symptom_timeline") or data.get("symptomTimeline") or "").strip() or "As reported in this session."
+        # For the ER sheet we now show the latest MediGuide summary instead of the whole chat history.
+        summary_text = (data.get("summary") or data.get("symptoms") or "").strip() or "Not specified"
+        symptom_timeline = (data.get("symptom_timeline") or data.get("symptomTimeline") or "").strip() or "Most recent MediGuide AI summary for this emergency visit."
         urgency = (data.get("urgency") or "HIGH").upper()
         doctor_questions = data.get("doctor_questions") or data.get("doctorQuestions") or []
 
@@ -873,7 +874,7 @@ def generate_er_pdf():
 
         pdf_bytes = build_er_prep_sheet(
             patient_name=patient_name,
-            symptoms=symptoms,
+            symptoms=summary_text,
             symptom_timeline=symptom_timeline,
             urgency=urgency,
             medications=medications,
