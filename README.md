@@ -1,6 +1,7 @@
 # MediGuide AI
 
 A **responsible, multilingual medical assistant** built entirely on **Azure** for the **Microsoft AI Dev Days Hackathon 2026**. MediGuide helps patients understand their health — symptoms, lab reports, medications, and medical images — in clear, simple language across **English, Urdu, Arabic, and Hindi**.
+
 Live App: https://mediguide-ai-evgudghhfrf8hfgy.canadaeast-01.azurewebsites.net
 ---
 
